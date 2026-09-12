@@ -7,11 +7,13 @@ import '../data/firestore_seed.dart';
 import '../models/board.dart';
 import '../models/member.dart';
 import '../screens/auth_gate.dart';
+import 'auth_provider.dart';
 import 'profile_provider.dart';
 
 class BoardsNotifier extends StateNotifier<List<Board>> {
   final FirebaseFirestore db;
   final String? uid;
+  final bool isAnonymous;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _memberSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _demoSub;
 
@@ -25,7 +27,7 @@ class BoardsNotifier extends StateNotifier<List<Board>> {
   Map<String, Board> _memberBoards = {};
   Map<String, Board> _demoBoards = {};
 
-  BoardsNotifier(this.db, this.uid) : super([]) {
+  BoardsNotifier(this.db, this.uid, this.isAnonymous) : super([]) {
     seedIfNeeded(db);
     final id = uid;
     if (id == null) return;
@@ -42,6 +44,13 @@ class BoardsNotifier extends StateNotifier<List<Board>> {
           _backfillMembership(snap.docs);
           _recompute();
         }, onError: (_) {});
+
+    // The seed/demo boards are a guest-only sandbox for visualization —
+    // real accounts (Google or email) start with a genuinely empty
+    // board list, same as a real multi-tenant app. Security rules
+    // enforce this too (isDemoBoard() requires an anonymous auth token),
+    // this just avoids fetching data a real account wouldn't see anyway.
+    if (!isAnonymous) return;
 
     _demoSub = db
         .collection('boards')
@@ -187,7 +196,8 @@ class BoardsNotifier extends StateNotifier<List<Board>> {
 
 final boardsProvider = StateNotifierProvider.autoDispose<BoardsNotifier, List<Board>>((ref) {
   final uid = ref.watch(currentMemberStateProvider)?.id;
-  return BoardsNotifier(ref.watch(firestoreProvider), uid);
+  final isAnonymous = ref.watch(authStateProvider).valueOrNull?.isAnonymous ?? false;
+  return BoardsNotifier(ref.watch(firestoreProvider), uid, isAnonymous);
 });
 
 /// Live viewers of a board, derived from heartbeat documents written by

@@ -4,14 +4,16 @@ rules_version = '2';
 // readable/writable by users listed in its `memberIds` array, and a
 // member with the 'viewer' role can read but not write tasks or board
 // fields (except the owner, who can always change roles). The 4 seeded
-// demo boards (`isDemo: true`) are the one exception — they stay open to
-// any signed-in visitor so a portfolio visitor sees a populated, live,
-// editable board immediately without needing an invite; every board
-// created afterwards via "Create board" is fully membership-gated.
-// Identity integrity is still enforced throughout: you can only write
-// your own profile/presence doc, and any task write must be attributed
-// to the account that made it (no spoofing another user via the
-// denormalized `updatedBy`/`author` fields the UI relies on for
+// demo boards (`isDemo: true`) are the one exception — but only for
+// guests (anonymous auth): they get a populated, live, editable board
+// immediately with no invite needed, purely as a sandbox for
+// visualization. A real account (Google or email) never sees the demo
+// boards — it starts genuinely empty, same as any board created
+// afterwards via "Create board", which is fully membership-gated for
+// everyone. Identity integrity is enforced throughout too: you can only
+// write your own profile/presence doc, and any task write must be
+// attributed to the account that made it (no spoofing another user via
+// the denormalized `updatedBy`/`author` fields the UI relies on for
 // conflict banners and activity logs).
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -22,6 +24,10 @@ service cloud.firestore {
 
     function isSelf(uid) {
       return request.auth.uid == uid;
+    }
+
+    function isAnonymousUser() {
+      return isSignedIn() && request.auth.token.firebase.sign_in_provider == 'anonymous';
     }
 
     match /meta/{docId} {
@@ -43,7 +49,7 @@ service cloud.firestore {
 
     match /boards/{boardId} {
       function isDemoBoard() {
-        return resource.data.isDemo == true;
+        return resource.data.isDemo == true && isAnonymousUser();
       }
       function isMember() {
         return isSignedIn() && request.auth.uid in resource.data.memberIds;
@@ -82,7 +88,7 @@ service cloud.firestore {
           return get(/databases/$(database)/documents/boards/$(boardId)).data;
         }
         function isDemoTaskBoard() {
-          return board().isDemo == true;
+          return board().isDemo == true && isAnonymousUser();
         }
         function isBoardMember() {
           return isSignedIn() && request.auth.uid in board().memberIds;
