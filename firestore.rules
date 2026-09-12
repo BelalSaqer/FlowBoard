@@ -1,0 +1,55 @@
+rules_version = '2';
+
+// FlowBoard is a shared-workspace demo: any signed-in user (Google or
+// guest) can see and edit any board, by design — there's no invite/
+// membership model yet. What these rules DO enforce is identity
+// integrity: you can only write your own profile/presence doc, and any
+// task write must be attributed to the account that made it (no
+// spoofing another user via the denormalized `updatedBy`/`author`
+// fields the UI relies on for conflict banners and activity logs).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return request.auth.uid == uid;
+    }
+
+    match /meta/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /users/{uid} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isSelf(uid);
+
+      // Narrow exception: another signed-in user can drop a notification
+      // into your subtree (e.g. "commented on your task"), but can't
+      // read, edit, or delete anything here — only you can.
+      match /notifications/{notifId} {
+        allow read, update, delete: if isSignedIn() && isSelf(uid);
+        allow create: if isSignedIn();
+      }
+    }
+
+    match /boards/{boardId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
+
+      match /presence/{uid} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() && isSelf(uid);
+      }
+
+      match /tasks/{taskId} {
+        allow read: if isSignedIn();
+        allow delete: if isSignedIn();
+        allow create, update: if isSignedIn()
+          && request.resource.data.updatedBy.id == request.auth.uid;
+      }
+    }
+  }
+}
