@@ -7,6 +7,8 @@ import '../theme/app_metrics.dart';
 import '../theme/app_text_styles.dart';
 import '../widgets/flowboard_logo.dart';
 
+enum _SignInFailureChoice { createAccount, useGoogle }
+
 class SignInScreen extends ConsumerStatefulWidget {
   const SignInScreen({super.key});
 
@@ -60,14 +62,32 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
       // Firebase now returns the same ambiguous code (invalid-credential,
       // sometimes still wrong-password/user-not-found on older configs) for
       // both "no such account" and "wrong password", as an email-enumeration
-      // protection. We can't tell them apart, so offer account creation for
-      // either case rather than claiming to know which one it is.
+      // protection — and that same protection makes
+      // fetchSignInMethodsForEmail() return nothing useful too, so we can't
+      // silently detect a Google-only account here. Instead, surface the
+      // "try Google" escape hatch directly in the dialog rather than
+      // dead-ending in a create-account loop the user can't get out of.
       const ambiguousCodes = {'invalid-credential', 'user-not-found', 'wrong-password'};
       if (ambiguousCodes.contains(e.code)) {
         if (mounted) setState(() => _busy = false);
-        final createAccount = await _confirmCreateAccount(email);
-        if (createAccount != true) return;
-        await _run(() => createAccountWithEmail(auth, email, password));
+        final choice = await _resolveSignInFailure(email);
+        if (choice == _SignInFailureChoice.useGoogle) {
+          await _run(() => signInWithGoogle(auth));
+        } else if (choice == _SignInFailureChoice.createAccount) {
+          await _run(() async {
+            try {
+              await createAccountWithEmail(auth, email, password);
+            } on FirebaseAuthException catch (e) {
+              if (e.code == 'email-already-in-use') {
+                throw FirebaseAuthException(
+                  code: e.code,
+                  message: 'This email is already registered — most likely with Google. Use "Continue with Google" above instead.',
+                );
+              }
+              rethrow;
+            }
+          });
+        }
         return;
       }
       if (mounted) setState(() => _error = friendlyAuthErrorMessage(e));
@@ -78,19 +98,26 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     }
   }
 
-  Future<bool?> _confirmCreateAccount(String email) {
-    return showDialog<bool>(
+  Future<_SignInFailureChoice?> _resolveSignInFailure(String email) {
+    return showDialog<_SignInFailureChoice>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Couldn\'t sign in'),
         content: Text(
-          'Either the password is wrong, or there\'s no account yet for $email. Create a new account with this email and password?',
+          'Either the password is wrong, there\'s no account yet for $email, or this email is already registered through Google (which doesn\'t use a password here).',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
           TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Create account', style: TextStyle(color: AppColors.primary)),
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(_SignInFailureChoice.createAccount),
+            child: const Text('Create account'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(_SignInFailureChoice.useGoogle),
+            child: const Text('Try Google instead', style: TextStyle(color: AppColors.primary)),
           ),
         ],
       ),

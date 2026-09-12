@@ -60,10 +60,45 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (mounted) ref.invalidate(currentMemberProvider);
   }
 
-  void _photoStub() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Photo upload is coming soon')),
+  Future<void> _pickAvatarColor(String uid, Color current) async {
+    final picked = await showDialog<Color>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Choose avatar color'),
+        content: Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            for (final c in AppColors.avatarPalette)
+              InkWell(
+                onTap: () => Navigator.of(context).pop(c),
+                borderRadius: BorderRadius.circular(999),
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: c,
+                    shape: BoxShape.circle,
+                    border: c.toARGB32() == current.toARGB32()
+                        ? Border.all(color: Theme.of(context).colorScheme.onSurface, width: 2.5)
+                        : null,
+                  ),
+                  child: c.toARGB32() == current.toARGB32()
+                      ? const Icon(Icons.check, color: Colors.white, size: 20)
+                      : null,
+                ),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        ],
+      ),
     );
+    if (picked == null || !mounted) return;
+    final db = ref.read(firestoreProvider);
+    await db.collection('users').doc(uid).set({'color': picked.toARGB32()}, SetOptions(merge: true));
+    ref.invalidate(currentMemberProvider);
   }
 
   Future<void> _linkGoogle() async {
@@ -129,7 +164,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               right: 0,
                               bottom: 0,
                               child: InkWell(
-                                onTap: _photoStub,
+                                onTap: () => _pickAvatarColor(me.id, me.color),
                                 borderRadius: BorderRadius.circular(999),
                                 child: Container(
                                   padding: const EdgeInsets.all(7),
@@ -138,7 +173,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                     shape: BoxShape.circle,
                                     border: Border.all(color: AppColors.primary, width: 1.4),
                                   ),
-                                  child: const Icon(Icons.camera_alt_outlined, size: 16, color: AppColors.primary),
+                                  child: const Icon(Icons.palette_outlined, size: 16, color: AppColors.primary),
                                 ),
                               ),
                             ),
