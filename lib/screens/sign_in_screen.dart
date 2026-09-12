@@ -21,6 +21,12 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
   String? _error;
   bool _emailExpanded = false;
 
+  // Set when Google sign-in fails because this email already has a
+  // password-based account — captured so it can be linked automatically
+  // once the user signs in with that password below, instead of ending
+  // up with two disconnected accounts for the same email.
+  AuthCredential? _pendingGoogleCredential;
+
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
@@ -45,6 +51,37 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     }
   }
 
+  Future<void> _signInWithGoogle(FirebaseAuth auth) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await signInWithGoogle(auth);
+    } on FirebaseAuthException catch (e) {
+      // Firebase's email-enumeration protection can report this as the
+      // generic invalid-credential code rather than the more specific
+      // account-exists-with-different-credential — but still tends to
+      // populate `email`/`credential` on the exception either way, so we
+      // key off those rather than the error code.
+      final email = e.email;
+      if (email != null && email.isNotEmpty) {
+        setState(() {
+          _emailExpanded = true;
+          _emailController.text = email;
+          _pendingGoogleCredential = e.credential;
+          _error = 'An account already exists for $email with a password. Sign in below, and your Google account will be linked for next time.';
+        });
+      } else {
+        setState(() => _error = 'Google sign-in failed. If you already have a FlowBoard account with this email and a password, sign in with that instead.');
+      }
+    } catch (e) {
+      if (mounted) setState(() => _error = friendlyAuthErrorMessage(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _signInWithEmail(FirebaseAuth auth) async {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
@@ -58,6 +95,16 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     });
     try {
       await signInWithEmail(auth, email, password);
+      final pendingCredential = _pendingGoogleCredential;
+      if (pendingCredential != null) {
+        _pendingGoogleCredential = null;
+        // Best-effort: link the Google credential so next time they can
+        // just tap "Continue with Google". Not fatal if it fails (e.g.
+        // already linked elsewhere) — they're signed in either way.
+        try {
+          await auth.currentUser!.linkWithCredential(pendingCredential);
+        } catch (_) {}
+      }
     } on FirebaseAuthException catch (e) {
       // Firebase now returns the same ambiguous code (invalid-credential,
       // sometimes still wrong-password/user-not-found on older configs) for
@@ -72,7 +119,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
         if (mounted) setState(() => _busy = false);
         final choice = await _resolveSignInFailure(email);
         if (choice == _SignInFailureChoice.useGoogle) {
-          await _run(() => signInWithGoogle(auth));
+          await _signInWithGoogle(auth);
         } else if (choice == _SignInFailureChoice.createAccount) {
           await _run(() async {
             try {
@@ -169,7 +216,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                 const SizedBox(height: 12),
               ],
               FilledButton(
-                onPressed: _busy ? null : () => _run(() => signInWithGoogle(auth)),
+                onPressed: _busy ? null : () => _signInWithGoogle(auth),
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   padding: const EdgeInsets.symmetric(vertical: 14),
