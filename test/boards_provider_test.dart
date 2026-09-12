@@ -14,7 +14,7 @@ void main() {
   group('BoardsNotifier', () {
     test('createBoard seeds memberIds and an owner role for the creator', () async {
       final db = FakeFirebaseFirestore();
-      final notifier = BoardsNotifier(db);
+      final notifier = BoardsNotifier(db, 'alice');
       await _settle();
 
       await notifier.createBoard('Roadmap', Colors.blue, _alice);
@@ -29,7 +29,7 @@ void main() {
 
     test('addMember appends to memberIds and defaults the new member to editor', () async {
       final db = FakeFirebaseFirestore();
-      final notifier = BoardsNotifier(db);
+      final notifier = BoardsNotifier(db, 'alice');
       await _settle();
       await notifier.createBoard('Roadmap', Colors.blue, _alice);
       await _settle();
@@ -45,7 +45,7 @@ void main() {
 
     test('setMemberRole updates only the target uid in the roles map', () async {
       final db = FakeFirebaseFirestore();
-      final notifier = BoardsNotifier(db);
+      final notifier = BoardsNotifier(db, 'alice');
       await _settle();
       await notifier.createBoard('Roadmap', Colors.blue, _alice);
       await _settle();
@@ -62,7 +62,7 @@ void main() {
 
     test('archiveBoard then unarchiveBoard round-trips through fetchArchivedBoards', () async {
       final db = FakeFirebaseFirestore();
-      final notifier = BoardsNotifier(db);
+      final notifier = BoardsNotifier(db, 'alice');
       await _settle();
       await notifier.createBoard('Roadmap', Colors.blue, _alice);
       await _settle();

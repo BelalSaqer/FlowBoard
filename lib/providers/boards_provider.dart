@@ -6,30 +6,60 @@ import '../data/firestore_mappers.dart';
 import '../data/firestore_seed.dart';
 import '../models/board.dart';
 import '../models/member.dart';
+import '../screens/auth_gate.dart';
 import 'profile_provider.dart';
 
 class BoardsNotifier extends StateNotifier<List<Board>> {
   final FirebaseFirestore db;
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _sub;
+  final String? uid;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _memberSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _demoSub;
 
-  BoardsNotifier(this.db) : super([]) {
+  // Firestore rejects an unfiltered `boards` collection query outright
+  // once the read rule depends on per-document fields (memberIds/isDemo)
+  // it can't prove hold for every document — a query needs a `where`
+  // clause that matches the rule for Firestore to allow it at all, it
+  // doesn't just filter results silently. So membership and demo boards
+  // are two separate queries, each matching one branch of the read rule,
+  // merged into one sorted list here.
+  Map<String, Board> _memberBoards = {};
+  Map<String, Board> _demoBoards = {};
+
+  BoardsNotifier(this.db, this.uid) : super([]) {
     seedIfNeeded(db);
-    _sub = db
+    final id = uid;
+    if (id == null) return;
+
+    _memberSub = db
         .collection('boards')
-        .orderBy('updatedAt', descending: true)
+        .where('memberIds', arrayContains: id)
         .snapshots()
-        .listen(
-          (snap) {
-            state = [
-              for (final doc in snap.docs)
-                if (doc.data()['archived'] != true) boardFromDoc(doc),
-            ];
-            _backfillMembership(snap.docs);
-          },
-          // Swallows the brief permission-denied burst that can happen if
-          // this outlives sign-out by a tick before autoDispose tears it down.
-          onError: (_) {},
-        );
+        .listen((snap) {
+          _memberBoards = {
+            for (final doc in snap.docs)
+              if (doc.data()['archived'] != true) doc.id: boardFromDoc(doc),
+          };
+          _backfillMembership(snap.docs);
+          _recompute();
+        }, onError: (_) {});
+
+    _demoSub = db
+        .collection('boards')
+        .where('isDemo', isEqualTo: true)
+        .snapshots()
+        .listen((snap) {
+          _demoBoards = {
+            for (final doc in snap.docs)
+              if (doc.data()['archived'] != true) doc.id: boardFromDoc(doc),
+          };
+          _backfillMembership(snap.docs);
+          _recompute();
+        }, onError: (_) {});
+  }
+
+  void _recompute() {
+    final merged = {..._demoBoards, ..._memberBoards};
+    state = merged.values.toList()..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
   }
 
   /// The original 4 boards seeded before `isDemo` existed. Kept as a
@@ -149,13 +179,15 @@ class BoardsNotifier extends StateNotifier<List<Board>> {
 
   @override
   void dispose() {
-    _sub?.cancel();
+    _memberSub?.cancel();
+    _demoSub?.cancel();
     super.dispose();
   }
 }
 
 final boardsProvider = StateNotifierProvider.autoDispose<BoardsNotifier, List<Board>>((ref) {
-  return BoardsNotifier(ref.watch(firestoreProvider));
+  final uid = ref.watch(currentMemberStateProvider)?.id;
+  return BoardsNotifier(ref.watch(firestoreProvider), uid);
 });
 
 /// Live viewers of a board, derived from heartbeat documents written by
