@@ -1,12 +1,18 @@
 rules_version = '2';
 
-// FlowBoard is a shared-workspace demo: any signed-in user (Google or
-// guest) can see and edit any board, by design — there's no invite/
-// membership model yet. What these rules DO enforce is identity
-// integrity: you can only write your own profile/presence doc, and any
-// task write must be attributed to the account that made it (no
-// spoofing another user via the denormalized `updatedBy`/`author`
-// fields the UI relies on for conflict banners and activity logs).
+// FlowBoard is a real per-board membership model: a board is only
+// readable/writable by users listed in its `memberIds` array, and a
+// member with the 'viewer' role can read but not write tasks or board
+// fields (except the owner, who can always change roles). The 4 seeded
+// demo boards (`isDemo: true`) are the one exception — they stay open to
+// any signed-in visitor so a portfolio visitor sees a populated, live,
+// editable board immediately without needing an invite; every board
+// created afterwards via "Create board" is fully membership-gated.
+// Identity integrity is still enforced throughout: you can only write
+// your own profile/presence doc, and any task write must be attributed
+// to the account that made it (no spoofing another user via the
+// denormalized `updatedBy`/`author` fields the UI relies on for
+// conflict banners and activity logs).
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -36,8 +42,35 @@ service cloud.firestore {
     }
 
     match /boards/{boardId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+      function isDemoBoard() {
+        return resource.data.isDemo == true;
+      }
+      function isMember() {
+        return isSignedIn() && request.auth.uid in resource.data.memberIds;
+      }
+      function isMemberOfNew() {
+        return isSignedIn() && request.auth.uid in request.resource.data.memberIds;
+      }
+      function myRole() {
+        return resource.data.roles[request.auth.uid];
+      }
+      function rolesUnchanged() {
+        return request.resource.data.roles == resource.data.roles;
+      }
+      function isOwner() {
+        return isSignedIn() && resource.data.ownerId == request.auth.uid;
+      }
+
+      allow read: if isSignedIn() && (isDemoBoard() || isMember());
+      allow create: if isSignedIn()
+        && isMemberOfNew()
+        && request.resource.data.ownerId == request.auth.uid;
+      // Any non-viewer member can edit board fields (rename, recolor,
+      // add a member, archive); only the owner can change `roles`. Demo
+      // boards bypass membership entirely, same as their read rule.
+      allow update: if isSignedIn()
+        && (isDemoBoard() || (isMember() && myRole() != 'viewer' && (rolesUnchanged() || isOwner())));
+      allow delete: if isOwner();
 
       match /presence/{uid} {
         allow read: if isSignedIn();
@@ -45,10 +78,24 @@ service cloud.firestore {
       }
 
       match /tasks/{taskId} {
-        allow read: if isSignedIn();
-        allow delete: if isSignedIn();
+        function board() {
+          return get(/databases/$(database)/documents/boards/$(boardId)).data;
+        }
+        function isDemoTaskBoard() {
+          return board().isDemo == true;
+        }
+        function isBoardMember() {
+          return isSignedIn() && request.auth.uid in board().memberIds;
+        }
+        function isBoardViewer() {
+          return board().roles[request.auth.uid] == 'viewer';
+        }
+
+        allow read: if isSignedIn() && (isDemoTaskBoard() || isBoardMember());
         allow create, update: if isSignedIn()
+          && (isDemoTaskBoard() || (isBoardMember() && !isBoardViewer()))
           && request.resource.data.updatedBy.id == request.auth.uid;
+        allow delete: if isSignedIn() && (isDemoTaskBoard() || (isBoardMember() && !isBoardViewer()));
       }
     }
   }

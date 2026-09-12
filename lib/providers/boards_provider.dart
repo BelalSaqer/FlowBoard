@@ -24,11 +24,38 @@ class BoardsNotifier extends StateNotifier<List<Board>> {
               for (final doc in snap.docs)
                 if (doc.data()['archived'] != true) boardFromDoc(doc),
             ];
+            _backfillMembership(snap.docs);
           },
           // Swallows the brief permission-denied burst that can happen if
           // this outlives sign-out by a tick before autoDispose tears it down.
           onError: (_) {},
         );
+  }
+
+  /// The original 4 boards seeded before `isDemo` existed. Kept as a
+  /// fixed list (rather than inferred) so this migration can't
+  /// accidentally mark a real user-created board as a public demo board.
+  static const _legacySeedBoardIds = {'b1', 'b2', 'b3', 'b4'};
+
+  /// Self-healing migration for boards written before membership-gated
+  /// security rules existed: patches in `memberIds` (rules read this to
+  /// decide who can access a board) and, for the original seed boards,
+  /// `isDemo` (so they stay open to any visitor). A no-op once every
+  /// board has been touched once.
+  void _backfillMembership(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    for (final doc in docs) {
+      final data = doc.data();
+      final needsMemberIds = !data.containsKey('memberIds');
+      final needsDemoFlag = _legacySeedBoardIds.contains(doc.id) && !data.containsKey('isDemo');
+      if (!needsMemberIds && !needsDemoFlag) continue;
+      final members = data['members'] as List<dynamic>? ?? [];
+      final memberIds = [for (final m in members) (m as Map)['id'] as String];
+      doc.reference.update({
+        if (needsMemberIds) 'memberIds': memberIds,
+        if (needsMemberIds && !data.containsKey('roles')) 'roles': <String, String>{},
+        if (needsDemoFlag) 'isDemo': true,
+      }).catchError((_) {});
+    }
   }
 
   Future<void> createBoard(String name, Color color, Member creator) async {
@@ -43,6 +70,7 @@ class BoardsNotifier extends StateNotifier<List<Board>> {
           members: [creator],
           updatedAt: DateTime.now(),
           ownerId: creator.id,
+          roles: {creator.id: 'owner'},
         ),
       ),
     );
@@ -68,9 +96,37 @@ class BoardsNotifier extends StateNotifier<List<Board>> {
     await db.collection('boards').doc(boardId).update({'archived': true});
   }
 
+  Future<void> unarchiveBoard(String boardId) async {
+    await db.collection('boards').doc(boardId).update({'archived': false});
+  }
+
+  /// Boards the current user belongs to that have been archived, for the
+  /// restore screen. One-shot rather than streamed since it's a rarely
+  /// visited recovery list, not a live view.
+  Future<List<Board>> fetchArchivedBoards(String uid) async {
+    final snap = await db
+        .collection('boards')
+        .where('memberIds', arrayContains: uid)
+        .where('archived', isEqualTo: true)
+        .get();
+    return [for (final doc in snap.docs) boardFromDoc(doc)];
+  }
+
   Future<void> addMember(String boardId, Member member) async {
     await db.collection('boards').doc(boardId).update({
       'members': FieldValue.arrayUnion([memberToMap(member)]),
+      'memberIds': FieldValue.arrayUnion([member.id]),
+      'roles.${member.id}': 'editor',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Owner-only: promotes/demotes a member between 'editor' and 'viewer'.
+  /// Enforced both here (UI only exposes this to the owner) and by
+  /// security rules (only the owner may change the `roles` map).
+  Future<void> setMemberRole(String boardId, String uid, String role) async {
+    await db.collection('boards').doc(boardId).update({
+      'roles.$uid': role,
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }

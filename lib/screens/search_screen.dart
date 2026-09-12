@@ -42,7 +42,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final query = _queryController.text.trim().toLowerCase();
     final all = tasksByColumn.values.expand((l) => l).toList();
     return all.where((t) {
-      if (query.isNotEmpty && !t.title.toLowerCase().contains(query)) return false;
+      if (query.isNotEmpty &&
+          !t.title.toLowerCase().contains(query) &&
+          !t.description.toLowerCase().contains(query)) {
+        return false;
+      }
       if (_fPriority.isNotEmpty && !_fPriority.contains(t.priority)) return false;
       if (_fAssigneeIds.isNotEmpty && !_fAssigneeIds.contains(t.assignee.id)) return false;
       return true;

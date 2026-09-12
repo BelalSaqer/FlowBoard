@@ -38,6 +38,10 @@ Board boardFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     // Seeded boards predate the ownerId field; fall back to the first
     // member so older docs still resolve an owner.
     ownerId: data['ownerId'] as String? ?? (members.isNotEmpty ? members.first.id : ''),
+    roles: {
+      for (final entry in (data['roles'] as Map<String, dynamic>? ?? {}).entries)
+        entry.key: entry.value as String,
+    },
   );
 }
 
@@ -45,7 +49,12 @@ Map<String, dynamic> boardToMap(Board b) => {
   'name': b.name,
   'color': b.color.toARGB32(),
   'members': [for (final m in b.members) memberToMap(m)],
+  // Denormalized alongside `members` purely so security rules can check
+  // membership cheaply (`uid in memberIds`) without decoding the member
+  // map list.
+  'memberIds': [for (final m in b.members) m.id],
   'ownerId': b.ownerId,
+  'roles': b.roles,
   'updatedAt': FieldValue.serverTimestamp(),
 };
 

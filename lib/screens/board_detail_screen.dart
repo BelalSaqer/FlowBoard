@@ -153,6 +153,7 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
           (b) => b.id == widget.board.id,
           orElse: () => widget.board,
         );
+    if (board.roleOf(me.id) == 'viewer') return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -177,6 +178,8 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
     final presence = ref.watch(presenceProvider(widget.board.id));
     final total = tasksByColumn.values.fold<int>(0, (a, l) => a + l.length);
     final isEmpty = total == 0;
+    final myId = ref.watch(currentMemberStateProvider)?.id;
+    final isViewer = myId != null && board.roleOf(myId) == 'viewer';
 
     return Scaffold(
       body: SafeArea(
@@ -196,7 +199,26 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(board.name, style: AppTextStyles.h2(color: theme.colorScheme.onSurface)),
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(board.name, style: AppTextStyles.h2(color: theme.colorScheme.onSurface), overflow: TextOverflow.ellipsis),
+                                ),
+                                if (isViewer) ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text('VIEW ONLY', style: AppTextStyles.metaTiny(
+                                      color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                                    ).copyWith(fontWeight: FontWeight.w800, letterSpacing: 0.3)),
+                                  ),
+                                ],
+                              ],
+                            ),
                             const SizedBox(height: 2),
                             Text(
                               isEmpty
@@ -216,6 +238,7 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
                       ),
                       const SizedBox(width: 8),
                       _OverflowButton(
+                        showInviteAndSettings: !isViewer,
                         onSelected: (value) {
                           if (value == 'invite') {
                             showModalBottomSheet(
@@ -247,7 +270,7 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
             if (isEmpty)
               Expanded(
                 child: BoardTasksEmptyState(
-                  onAddFirstTask: () => _openNewTask(BoardColumnId.todo),
+                  onAddFirstTask: isViewer ? null : () => _openNewTask(BoardColumnId.todo),
                 ),
               )
             else ...[
@@ -300,6 +323,7 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
                       onDragUpdateGlobal: _onDragUpdateGlobal,
                       onOpenTask: _openTask,
                       onOpenNewTask: _openNewTask,
+                      canEdit: !isViewer,
                     );
                   },
                 ),
@@ -339,7 +363,8 @@ class _SearchButton extends StatelessWidget {
 
 class _OverflowButton extends StatelessWidget {
   final void Function(String value) onSelected;
-  const _OverflowButton({required this.onSelected});
+  final bool showInviteAndSettings;
+  const _OverflowButton({required this.onSelected, this.showInviteAndSettings = true});
 
   @override
   Widget build(BuildContext context) {
@@ -348,10 +373,10 @@ class _OverflowButton extends StatelessWidget {
       tooltip: 'Board menu',
       offset: const Offset(0, 42),
       onSelected: onSelected,
-      itemBuilder: (context) => const [
-        PopupMenuItem(value: 'invite', child: Text('Invite')),
-        PopupMenuItem(value: 'activity', child: Text('Activity')),
-        PopupMenuItem(value: 'settings', child: Text('Board settings')),
+      itemBuilder: (context) => [
+        if (showInviteAndSettings) const PopupMenuItem(value: 'invite', child: Text('Invite')),
+        const PopupMenuItem(value: 'activity', child: Text('Activity')),
+        if (showInviteAndSettings) const PopupMenuItem(value: 'settings', child: Text('Board settings')),
       ],
       child: Container(
         width: 34,

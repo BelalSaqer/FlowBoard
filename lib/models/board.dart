@@ -8,6 +8,7 @@ class Board {
   final List<Member> members;
   final DateTime updatedAt;
   final String ownerId;
+  final Map<String, String> roles;
 
   const Board({
     required this.id,
@@ -16,5 +17,14 @@ class Board {
     required this.members,
     required this.updatedAt,
     required this.ownerId,
+    this.roles = const {},
   });
+
+  /// 'owner', 'editor', or 'viewer'. The owner always resolves to 'owner'
+  /// regardless of what's in [roles]; everyone else defaults to 'editor'
+  /// until explicitly demoted.
+  String roleOf(String uid) {
+    if (uid == ownerId) return 'owner';
+    return roles[uid] ?? 'editor';
+  }
 }

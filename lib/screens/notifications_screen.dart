@@ -57,10 +57,26 @@ class NotificationsScreen extends ConsumerWidget {
                       ? Center(
                           child: Text('No notifications yet', style: AppTextStyles.body(color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
                         )
-                      : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
-                          itemCount: notifs.length,
-                          itemBuilder: (context, i) => _NotificationTile(entry: notifs[i]),
+                      : Consumer(
+                          builder: (context, ref, _) {
+                            final pageSize = ref.watch(notificationsPageSizeProvider);
+                            final canLoadMore = notifs.length >= pageSize;
+                            return ListView.builder(
+                              padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
+                              itemCount: notifs.length + (canLoadMore ? 1 : 0),
+                              itemBuilder: (context, i) {
+                                if (i == notifs.length) {
+                                  return Center(
+                                    child: TextButton(
+                                      onPressed: () => ref.read(notificationsPageSizeProvider.notifier).state += 20,
+                                      child: Text('Load more', style: AppTextStyles.body(color: AppColors.primary).copyWith(fontWeight: FontWeight.w600)),
+                                    ),
+                                  );
+                                }
+                                return _NotificationTile(entry: notifs[i]);
+                              },
+                            );
+                          },
                         ),
                 ),
               ],

@@ -16,7 +16,12 @@ Future<void> seedIfNeeded(FirebaseFirestore db) async {
 
     for (final board in MockData.boards) {
       final boardRef = db.collection('boards').doc(board.id);
-      txn.set(boardRef, boardToMap(board));
+      // Seed/demo boards stay open to any signed-in visitor (see
+      // firestore.rules `isDemo` exception) so a portfolio visitor sees a
+      // populated, editable board immediately, without needing an invite.
+      // Boards created afterwards via "Create board" are fully
+      // membership-gated.
+      txn.set(boardRef, {...boardToMap(board), 'isDemo': true});
 
       final tasksByColumn = MockData.tasksForBoard(board.id);
       for (final tasks in tasksByColumn.values) {

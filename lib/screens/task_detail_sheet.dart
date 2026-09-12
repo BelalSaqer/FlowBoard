@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/conflict_info.dart';
 import '../models/task_card.dart';
 import '../providers/board_tasks_provider.dart';
+import '../providers/boards_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_metrics.dart';
 import '../theme/app_text_styles.dart';
@@ -43,6 +44,26 @@ class _TaskDetailSheetState extends ConsumerState<TaskDetailSheet> {
     if (mounted) setState(() => _aiLoading = false);
   }
 
+  Future<void> _delete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete task?'),
+        content: const Text('This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete', style: TextStyle(color: AppColors.priorityHigh)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await ref.read(boardTasksProvider(widget.boardId).notifier).deleteTask(widget.taskId);
+    if (mounted) Navigator.of(context).maybePop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -53,12 +74,16 @@ class _TaskDetailSheetState extends ConsumerState<TaskDetailSheet> {
 
     if (task == null) return const SizedBox.shrink();
 
+    final boardMatches = ref.watch(boardsProvider).where((b) => b.id == widget.boardId);
+    final board = boardMatches.isEmpty ? null : boardMatches.first;
+    final myId = ref.watch(currentMemberStateProvider)?.id;
+    final canEdit = board == null || myId == null || board.roleOf(myId) != 'viewer';
+
     if (!_baselineCaptured) {
       _baselineUpdatedAt = taskDoc?.updatedAt;
       _baselineCaptured = true;
     }
 
-    final myId = ref.read(currentMemberStateProvider)?.id;
     ConflictInfo? conflict;
     final docUpdatedAt = taskDoc?.updatedAt;
     final docUpdatedBy = taskDoc?.updatedBy;
@@ -101,6 +126,14 @@ class _TaskDetailSheetState extends ConsumerState<TaskDetailSheet> {
                           ),
                         ),
                         const Spacer(),
+                        if (canEdit)
+                          GestureDetector(
+                            onTap: _delete,
+                            child: Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Icon(Icons.delete_outline, size: 18, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+                            ),
+                          ),
                         GestureDetector(
                           onTap: () => Navigator.of(context).maybePop(),
                           child: Padding(
@@ -129,7 +162,8 @@ class _TaskDetailSheetState extends ConsumerState<TaskDetailSheet> {
                           child: Text(task.title, style: AppTextStyles.h2(color: theme.colorScheme.onSurface)),
                         ),
                         const SizedBox(width: 10),
-                        _AiButton(loading: _aiLoading, hasSubtasks: task.subtasks.isNotEmpty, onTap: _runAi),
+                        if (canEdit)
+                          _AiButton(loading: _aiLoading, hasSubtasks: task.subtasks.isNotEmpty, onTap: _runAi),
                       ],
                     ),
                     const SizedBox(height: 14),
@@ -168,7 +202,7 @@ class _TaskDetailSheetState extends ConsumerState<TaskDetailSheet> {
                       const SizedBox(height: 14),
                       _SubtasksCard(
                         task: task,
-                        onToggle: (id) => notifier.toggleSubtask(task.id, id),
+                        onToggle: canEdit ? (id) => notifier.toggleSubtask(task.id, id) : null,
                       ),
                     ],
                     const SizedBox(height: 22),
@@ -192,13 +226,14 @@ class _TaskDetailSheetState extends ConsumerState<TaskDetailSheet> {
                 ),
               ),
             ),
-            _CommentInput(
-              controller: _commentController,
-              onSend: () {
-                notifier.addComment(task.id, _commentController.text);
-                _commentController.clear();
-              },
-            ),
+            if (canEdit)
+              _CommentInput(
+                controller: _commentController,
+                onSend: () {
+                  notifier.addComment(task.id, _commentController.text);
+                  _commentController.clear();
+                },
+              ),
           ],
         ),
       ),
@@ -302,7 +337,7 @@ class _AiSkeleton extends StatelessWidget {
 
 class _SubtasksCard extends StatelessWidget {
   final TaskCard task;
-  final void Function(String subtaskId) onToggle;
+  final void Function(String subtaskId)? onToggle;
   const _SubtasksCard({required this.task, required this.onToggle});
 
   @override
@@ -330,7 +365,7 @@ class _SubtasksCard extends StatelessWidget {
           ),
           for (var i = 0; i < task.subtasks.length; i++)
             InkWell(
-              onTap: () => onToggle(task.subtasks[i].id),
+              onTap: onToggle == null ? null : () => onToggle!(task.subtasks[i].id),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
                 decoration: BoxDecoration(

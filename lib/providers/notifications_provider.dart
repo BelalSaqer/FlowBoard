@@ -46,12 +46,19 @@ Future<void> writeNotification(
   });
 }
 
+/// How many notifications to load, growing via [NotificationsScreen]'s
+/// "Load more" so a long-lived account doesn't stream its entire history
+/// on every app open.
+final notificationsPageSizeProvider = StateProvider.autoDispose<int>((ref) => 20);
+
 final notificationsProvider = StreamProvider.autoDispose<List<NotificationEntry>>((ref) {
   final me = ref.watch(currentMemberStateProvider);
   final db = ref.watch(firestoreProvider);
+  final pageSize = ref.watch(notificationsPageSizeProvider);
   if (me == null) return const Stream.empty();
   return _notificationsCol(db, me.id)
       .orderBy('createdAt', descending: true)
+      .limit(pageSize)
       .snapshots()
       .map((snap) => [for (final d in snap.docs) _fromDoc(d)]);
 });

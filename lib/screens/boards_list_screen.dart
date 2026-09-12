@@ -10,6 +10,7 @@ import '../providers/notifications_provider.dart';
 import '../widgets/board_card.dart';
 import '../widgets/empty_states.dart';
 import '../widgets/member_avatar.dart';
+import 'archived_boards_screen.dart';
 import 'auth_gate.dart';
 import 'board_detail_screen.dart';
 import 'notifications_screen.dart';
@@ -123,9 +124,24 @@ class BoardsListScreen extends ConsumerWidget {
               )
             else ...[
               const SizedBox(height: 4),
-              Text(
-                '${boards.length} boards · $shared shared with you',
-                style: AppTextStyles.metaMedium(color: theme.colorScheme.onSurface.withValues(alpha: 0.55)),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${boards.length} boards · $shared shared with you',
+                      style: AppTextStyles.metaMedium(color: theme.colorScheme.onSurface.withValues(alpha: 0.55)),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const ArchivedBoardsScreen()),
+                    ),
+                    child: Text(
+                      'Archived',
+                      style: AppTextStyles.metaMedium(color: theme.colorScheme.onSurface.withValues(alpha: 0.45)).copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 18),
               for (final board in boards) ...[

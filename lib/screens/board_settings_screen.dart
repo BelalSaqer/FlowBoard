@@ -5,6 +5,7 @@ import '../providers/boards_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 import '../widgets/member_role_row.dart';
+import 'auth_gate.dart';
 
 const _boardPalette = [
   AppColors.primary,
@@ -45,12 +46,6 @@ class _BoardSettingsScreenState extends ConsumerState<BoardSettingsScreen> {
   void _pickColor(Color c) {
     setState(() => _color = c);
     ref.read(boardsProvider.notifier).recolorBoard(widget.board.id, c);
-  }
-
-  void _roleTapped() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Role permissions aren't enforced yet — coming soon")),
-    );
   }
 
   Future<void> _archive() async {
@@ -101,6 +96,12 @@ class _BoardSettingsScreenState extends ConsumerState<BoardSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final board = ref.watch(boardsProvider).firstWhere(
+          (b) => b.id == widget.board.id,
+          orElse: () => widget.board,
+        );
+    final myId = ref.watch(currentMemberStateProvider)?.id;
+    final isOwner = myId != null && myId == board.ownerId;
     return Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(
@@ -169,30 +170,39 @@ class _BoardSettingsScreenState extends ConsumerState<BoardSettingsScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              for (final m in widget.board.members)
+              for (final m in board.members)
                 MemberRoleRow(
                   member: m,
-                  isOwner: m.id == widget.board.ownerId,
-                  onRoleTap: _roleTapped,
+                  role: board.roleOf(m.id),
+                  onRoleTap: (isOwner && m.id != board.ownerId)
+                      ? () async {
+                          final picked = await showRolePickerDialog(context, board.roleOf(m.id));
+                          if (picked != null) {
+                            await ref.read(boardsProvider.notifier).setMemberRole(board.id, m.id, picked);
+                          }
+                        }
+                      : null,
                 ),
-              const SizedBox(height: 30),
-              Text(
-                'DANGER ZONE',
-                style: AppTextStyles.meta(color: AppColors.priorityHigh).copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.4),
-              ),
-              const SizedBox(height: 10),
-              _DangerAction(
-                title: 'Archive board',
-                subtitle: 'Hide it from everyone. Restorable later.',
-                onTap: _archive,
-              ),
-              const SizedBox(height: 10),
-              _DangerAction(
-                title: 'Delete board',
-                subtitle: 'Permanent. All tasks and their history go too.',
-                filled: true,
-                onTap: _delete,
-              ),
+              if (isOwner) ...[
+                const SizedBox(height: 30),
+                Text(
+                  'DANGER ZONE',
+                  style: AppTextStyles.meta(color: AppColors.priorityHigh).copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.4),
+                ),
+                const SizedBox(height: 10),
+                _DangerAction(
+                  title: 'Archive board',
+                  subtitle: 'Hide it from everyone. Restorable later from Boards → Archived.',
+                  onTap: _archive,
+                ),
+                const SizedBox(height: 10),
+                _DangerAction(
+                  title: 'Delete board',
+                  subtitle: 'Permanent. All tasks and their history go too.',
+                  filled: true,
+                  onTap: _delete,
+                ),
+              ],
             ],
           ),
         ),

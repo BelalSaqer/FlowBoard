@@ -168,7 +168,7 @@ class BoardsEmptyState extends StatelessWidget {
 
 /// Shown inside a board when it has zero tasks in any column.
 class BoardTasksEmptyState extends StatelessWidget {
-  final VoidCallback onAddFirstTask;
+  final VoidCallback? onAddFirstTask;
 
   const BoardTasksEmptyState({super.key, required this.onAddFirstTask});
 
@@ -201,16 +201,18 @@ class BoardTasksEmptyState extends StatelessWidget {
               textAlign: TextAlign.center,
               style: AppTextStyles.body(color: theme.colorScheme.onSurface.withValues(alpha: 0.55)).copyWith(height: 1.5),
             ),
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: onAddFirstTask,
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadii.button)),
+            if (onAddFirstTask != null) ...[
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: onAddFirstTask,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadii.button)),
+                ),
+                child: Text('+ Add your first task', style: AppTextStyles.bodyLarge(color: Colors.white).copyWith(fontWeight: FontWeight.w700)),
               ),
-              child: Text('+ Add your first task', style: AppTextStyles.bodyLarge(color: Colors.white).copyWith(fontWeight: FontWeight.w700)),
-            ),
+            ],
           ],
         ),
       ),

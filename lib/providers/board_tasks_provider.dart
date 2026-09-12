@@ -246,6 +246,10 @@ class BoardTasksNotifier extends StateNotifier<BoardTasksState> {
     );
   }
 
+  Future<void> deleteTask(String taskId) async {
+    await _tasksCol.doc(taskId).delete();
+  }
+
   @override
   void dispose() {
     _sub?.cancel();

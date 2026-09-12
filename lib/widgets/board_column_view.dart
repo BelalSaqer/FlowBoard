@@ -27,6 +27,7 @@ class BoardColumnView extends StatelessWidget {
   final void Function(DragUpdateDetails details) onDragUpdateGlobal;
   final void Function(TaskCard task) onOpenTask;
   final void Function(BoardColumnId column) onOpenNewTask;
+  final bool canEdit;
 
   const BoardColumnView({
     super.key,
@@ -42,6 +43,7 @@ class BoardColumnView extends StatelessWidget {
     required this.onDragUpdateGlobal,
     required this.onOpenTask,
     required this.onOpenNewTask,
+    this.canEdit = true,
   });
 
   bool get _isHoverTarget => hoverColumn == columnId;
@@ -110,6 +112,7 @@ class BoardColumnView extends StatelessWidget {
                           task: tasks[i],
                           index: i,
                           columnId: columnId,
+                          canDrag: canEdit,
                           onHover: onHover,
                           onDrop: onDrop,
                           onDragStarted: onDragStarted,
@@ -129,12 +132,13 @@ class BoardColumnView extends StatelessWidget {
                     ],
                   ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: _AddTaskButton(
-              onTap: () => onOpenNewTask(columnId),
+          if (canEdit)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: _AddTaskButton(
+                onTap: () => onOpenNewTask(columnId),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -171,6 +175,7 @@ class _CardSlot extends StatelessWidget {
   final VoidCallback onDragEnd;
   final void Function(DragUpdateDetails details) onDragUpdateGlobal;
   final void Function(TaskCard task) onOpenTask;
+  final bool canDrag;
 
   const _CardSlot({
     required this.task,
@@ -182,11 +187,16 @@ class _CardSlot extends StatelessWidget {
     required this.onDragEnd,
     required this.onDragUpdateGlobal,
     required this.onOpenTask,
+    this.canDrag = true,
   });
 
   @override
   Widget build(BuildContext context) {
     final data = TaskDragData(taskId: task.id, fromColumn: task.column);
+
+    if (!canDrag) {
+      return TaskCardWidget(task: task, onTap: () => onOpenTask(task));
+    }
 
     return DragTarget<TaskDragData>(
       onWillAcceptWithDetails: (details) => details.data.taskId != task.id,

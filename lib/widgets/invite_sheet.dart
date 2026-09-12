@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/board.dart';
 import '../providers/boards_provider.dart';
 import '../providers/profile_provider.dart';
+import '../screens/auth_gate.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_metrics.dart';
 import '../theme/app_text_styles.dart';
@@ -227,10 +228,15 @@ class _InviteSheetState extends ConsumerState<InviteSheet> {
               for (final m in board.members)
                 MemberRoleRow(
                   member: m,
-                  isOwner: m.id == board.ownerId,
-                  onRoleTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Role permissions aren't enforced yet — coming soon")),
-                  ),
+                  role: board.roleOf(m.id),
+                  onRoleTap: (ref.watch(currentMemberStateProvider)?.id == board.ownerId && m.id != board.ownerId)
+                      ? () async {
+                          final picked = await showRolePickerDialog(context, board.roleOf(m.id));
+                          if (picked != null) {
+                            await ref.read(boardsProvider.notifier).setMemberRole(board.id, m.id, picked);
+                          }
+                        }
+                      : null,
                 ),
             ],
           ),

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/auth_provider.dart';
@@ -63,6 +64,25 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Photo upload is coming soon')),
     );
+  }
+
+  Future<void> _linkGoogle() async {
+    final auth = ref.read(firebaseAuthProvider);
+    try {
+      await auth.currentUser!.linkWithPopup(GoogleAuthProvider());
+      if (mounted) {
+        ref.invalidate(currentMemberProvider);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Account linked — you can now sign in with Google.')),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      final message = e.code == 'credential-already-in-use'
+          ? 'That Google account is already linked to a different FlowBoard account.'
+          : friendlyAuthErrorMessage(e);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    }
   }
 
   @override
@@ -190,6 +210,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         mode: themeMode,
                         onChanged: (m) => ref.read(themeModeProvider.notifier).setThemeMode(m),
                       ),
+                      if (user != null && user.isAnonymous) ...[
+                        const SizedBox(height: 24),
+                        Text('ACCOUNT', style: AppTextStyles.meta(color: theme.colorScheme.onSurface.withValues(alpha: 0.5)).copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.4)),
+                        const SizedBox(height: 8),
+                        OutlinedButton(
+                          onPressed: _linkGoogle,
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadii.button)),
+                          ),
+                          child: Text(
+                            'Link Google account to save this guest profile',
+                            textAlign: TextAlign.center,
+                            style: AppTextStyles.bodySmall(color: theme.colorScheme.onSurface).copyWith(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 28),
                       FilledButton(
                         onPressed: () => _editName(me.id, me.name),
