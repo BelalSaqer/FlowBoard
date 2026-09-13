@@ -116,7 +116,9 @@ class BoardTasksNotifier extends StateNotifier<BoardTasksState> {
     });
   }
 
-  Future<void> addComment(String taskId, String body) async {
+  static final _mentionPattern = RegExp(r'@([a-z0-9_]{3,20})', caseSensitive: false);
+
+  Future<void> addComment(String taskId, String body, {List<Member> boardMembers = const []}) async {
     final trimmed = body.trim();
     if (trimmed.isEmpty) return;
     final me = currentMember();
@@ -150,7 +152,68 @@ class BoardTasksNotifier extends StateNotifier<BoardTasksState> {
         taskId: taskId,
         taskTitle: task.title,
       );
+
+      // @mentions: each token is a reserved username, resolved via the
+      // same `usernames` lookup invites use — then restricted to this
+      // board's own members, since mentioning someone who can't even see
+      // the task wouldn't mean anything.
+      final handles = <String>{
+        for (final match in _mentionPattern.allMatches(trimmed)) match.group(1)!.toLowerCase(),
+      };
+      final memberIds = boardMembers.map((m) => m.id).toSet();
+      for (final handle in handles) {
+        final mentioned = await findMemberByUsername(db, handle);
+        if (mentioned == null) continue;
+        if (mentioned.id == me.id || !memberIds.contains(mentioned.id)) continue;
+        if (mentioned.id == task.assignee.id) continue; // already notified above
+        await writeNotification(
+          db,
+          recipient: mentioned,
+          actor: me,
+          type: NotificationType.mention,
+          boardId: boardId,
+          taskId: taskId,
+          taskTitle: task.title,
+        );
+      }
     }
+  }
+
+  Future<void> setLabels(String taskId, List<String> labels) async {
+    final me = currentMember();
+    await _tasksCol.doc(taskId).update({
+      'labels': labels,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': memberToMap(me),
+    });
+  }
+
+  /// Moves every task in [taskIds] into [toColumn], appended after that
+  /// column's current last card. One batch write, so a bulk move of many
+  /// cards is still a single round trip.
+  Future<void> bulkMove(Set<String> taskIds, BoardColumnId toColumn) async {
+    final me = currentMember();
+    final batch = db.batch();
+    final existing = state[toColumn]!;
+    var order = existing.isEmpty ? 0.0 : _docsById[existing.last.id]!.order;
+    for (final id in taskIds) {
+      order += 1000.0;
+      batch.update(_tasksCol.doc(id), {
+        'column': toColumn.name,
+        'order': order,
+        'updatedAt': FieldValue.serverTimestamp(),
+        'updatedBy': memberToMap(me),
+      });
+    }
+    await batch.commit();
+  }
+
+  Future<void> bulkDelete(Set<String> taskIds) async {
+    final batch = db.batch();
+    for (final id in taskIds) {
+      batch.delete(_tasksCol.doc(id));
+    }
+    await batch.commit();
   }
 
   static const _fallbackSuggestions = [
@@ -207,6 +270,7 @@ class BoardTasksNotifier extends StateNotifier<BoardTasksState> {
     Priority priority = Priority.medium,
     Member? assignee,
     DateTime? dueDate,
+    List<String> labels = const [],
   }) async {
     final trimmed = title.trim();
     if (trimmed.isEmpty) return;
@@ -231,6 +295,7 @@ class BoardTasksNotifier extends StateNotifier<BoardTasksState> {
       'subtasks': <Map<String, dynamic>>[],
       'comments': <Map<String, dynamic>>[],
       'activity': [activityToMap(activity)],
+      'labels': labels,
       'updatedAt': FieldValue.serverTimestamp(),
       'updatedBy': memberToMap(me),
     });

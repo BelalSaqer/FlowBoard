@@ -1,17 +1,120 @@
-# flowboard
+# FlowBoard
 
-A new Flutter project.
+A real-time collaborative task board — built with Flutter and Firebase. Every
+piece of "real-time" behavior here is a genuine Firestore listener chain, not
+a simulated demo: drag a card and another open tab moves it live; two people
+editing the same card get a real conflict banner computed from actual
+concurrent writes; a teammate's presence pill appears from a live heartbeat.
 
-## Getting Started
+**Live app:** https://flowboard-app-7539.web.app
 
-This project is a starting point for a Flutter application.
+## Features
 
-A few resources to get you started if this is your first Flutter project:
+- **Boards & tasks** — create/rename/recolor/archive boards, drag-and-drop
+  cards across To Do / In Progress / Done with fractional-index ordering,
+  task labels, due dates with overdue/due-soon indicators, subtasks,
+  comments with `@mention` notifications, and a per-board activity log
+- **Bulk actions** — multi-select mode to move or delete several tasks at
+  once
+- **CSV export** — download any board's tasks as a spreadsheet
+- **Real-time collaboration** — live presence, and conflict detection that
+  flags when someone else edited a card while you had it open
+- **AI-assisted subtasks** — breaks a task into a checklist via the Gemini
+  API (falls back to a static suggestion list with no key configured)
+- **Auth** — Google, Apple, email/password, or guest, with account linking
+  and clear recovery paths for Firebase's ambiguous credential errors
+- **Reserved usernames & avatar photos** — race-safe username claims,
+  client-compressed photo upload (no paid storage backend required)
+- **Three ways to invite** — by email, by `@username`, or a shareable
+  `/join/{boardId}` link
+- **Real permissions** — per-board Owner/Editor/Viewer roles enforced by
+  Firestore Security Rules, not just hidden UI
+- **Search & filters** — text search plus priority, assignee, overdue, and
+  due-soon filters
+- **Notifications, light/dark/system theme, branded splash screen**
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Tech stack
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Flutter (Web + Android) · Riverpod · Firebase (Firestore, Auth, Hosting) ·
+Google Gemini API
+
+Deliberately built without any paid infrastructure — no Cloud Functions, no
+Firebase Storage (now Blaze-only even for free-tier usage). Avatar photos
+are compressed client-side and stored inline; invite links and permissions
+are enforced entirely through Firestore Security Rules.
+
+## Getting started
+
+```bash
+flutter pub get
+
+# Point at your own Firebase project
+flutterfire configure
+
+# Enable Google, Apple, Email/Password, and Anonymous sign-in
+# in Firebase Console → Authentication → Sign-in method
+
+firebase deploy --only firestore:rules
+
+flutter run -d chrome --dart-define=GEMINI_API_KEY=your_key_here
+```
+
+## Testing
+
+```bash
+flutter analyze
+flutter test
+```
+
+29+ provider/widget tests run against `fake_cloud_firestore` and
+`firebase_auth_mocks` — no live Firebase project needed. A separate
+Playwright suite in [`test/e2e/`](test/e2e/) checks things unit tests can't
+see (real OAuth popups, real deep links, real Firestore round trips)
+against a live deployed URL; see that folder's README for how to run it.
+
+## Deployment
+
+```bash
+flutter build web --release --dart-define=GEMINI_API_KEY=your_key_here
+firebase deploy --only hosting
+firebase deploy --only firestore:rules   # after any firestore.rules change
+```
+
+CI (`.github/workflows/ci.yml`) runs `flutter analyze`, `flutter test`, and
+a release web build on every push and pull request.
+
+## Project structure
+
+```
+lib/
+├── data/        # Firestore ⇄ model mappers, CSV export, demo-data seed
+├── models/      # plain immutable data classes
+├── providers/   # all Firestore/Auth logic (Riverpod)
+├── screens/     # one file per full-page route
+├── services/    # Gemini client, deep-link capture, web-only helpers
+├── theme/       # design tokens
+└── widgets/     # reusable shared UI
+
+test/            # provider/widget tests (offline, fake_cloud_firestore)
+test/e2e/        # Playwright checks against the live deployed app
+firestore.rules  # full security model — see the project documentation
+```
+
+## Known limitations
+
+- **iOS**: builds for Web and Android only. The iOS project scaffold exists
+  but has no `GoogleService-Info.plist` and was never Xcode-signed — Firebase
+  wasn't configured for that platform (requires a Mac + Firebase Console
+  access this project's environment doesn't have). Running
+  `flutterfire configure` with iOS selected, on a Mac, should be enough to
+  bring it up.
+- **Gemini API key** is scoped by API restriction, not by HTTP referrer —
+  current Gemini key types don't support referrer restriction. A backend
+  proxy would close this gap but requires paid Cloud Functions.
+- Avatar photos are capped at ~180 KB (stored inline on the user doc to
+  avoid a paid storage backend).
+
+## Documentation
+
+A full architecture, data-model, and security-rules writeup lives in
+[`FlowBoard_Documentation.pdf`](FlowBoard_Documentation.pdf).

@@ -225,12 +225,17 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 40),
-              const FlowBoardLogo(size: 64),
+              const Center(child: FlowBoardLogo(size: 64)),
               const SizedBox(height: 20),
-              Text('FlowBoard', style: AppTextStyles.h1(color: theme.colorScheme.onSurface)),
+              Text(
+                'FlowBoard',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.h1(color: theme.colorScheme.onSurface),
+              ),
               const SizedBox(height: 6),
               Text(
                 'Real-time boards your team can edit together.',
+                textAlign: TextAlign.center,
                 style: AppTextStyles.body(color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
               ),
               const SizedBox(height: 36),

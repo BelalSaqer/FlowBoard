@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../data/csv_export.dart';
 import '../models/board.dart';
 import '../models/board_column.dart';
 import '../models/task_card.dart';
 import '../providers/board_tasks_provider.dart';
 import '../providers/boards_provider.dart';
 import '../providers/profile_provider.dart';
+import '../services/file_export.dart';
+import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 import '../widgets/board_column_view.dart';
 import '../widgets/empty_states.dart';
@@ -39,6 +42,9 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
   BoardColumnId? _hoverColumn;
   int? _hoverIndex;
   Timer? _autoScrollTimer;
+
+  bool _selectionMode = false;
+  final Set<String> _selectedIds = {};
 
   static const _columns = BoardColumnId.values;
 
@@ -146,6 +152,68 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
     );
   }
 
+  void _toggleSelectionMode() {
+    setState(() {
+      _selectionMode = !_selectionMode;
+      _selectedIds.clear();
+    });
+  }
+
+  void _toggleSelect(String taskId) {
+    setState(() {
+      if (_selectedIds.contains(taskId)) {
+        _selectedIds.remove(taskId);
+      } else {
+        _selectedIds.add(taskId);
+      }
+    });
+  }
+
+  Future<void> _bulkMove(BoardColumnId toColumn) async {
+    final ids = Set<String>.from(_selectedIds);
+    setState(() {
+      _selectionMode = false;
+      _selectedIds.clear();
+    });
+    await ref.read(boardTasksProvider(widget.board.id).notifier).bulkMove(ids, toColumn);
+  }
+
+  Future<void> _bulkDelete() async {
+    final count = _selectedIds.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete $count task${count == 1 ? '' : 's'}?'),
+        content: const Text('This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete', style: TextStyle(color: AppColors.priorityHigh)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final ids = Set<String>.from(_selectedIds);
+    setState(() {
+      _selectionMode = false;
+      _selectedIds.clear();
+    });
+    await ref.read(boardTasksProvider(widget.board.id).notifier).bulkDelete(ids);
+  }
+
+  void _exportCsv(Board board) {
+    final tasksByColumn = ref.read(boardTasksProvider(board.id));
+    final csv = buildBoardCsv(board, tasksByColumn);
+    final filename = '${board.name.replaceAll(RegExp(r'[^a-zA-Z0-9_-]+'), '_')}_export.csv';
+    final ok = downloadTextFile(filename, csv);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(ok ? 'Downloaded $filename' : 'Export is only available on web.')),
+    );
+  }
+
   void _openNewTask(BoardColumnId column) {
     final me = ref.read(currentMemberStateProvider);
     if (me == null) return;
@@ -236,6 +304,10 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
                           MaterialPageRoute(builder: (_) => SearchScreen(board: board)),
                         ),
                       ),
+                      if (!isViewer && !isEmpty) ...[
+                        const SizedBox(width: 8),
+                        _SelectModeButton(active: _selectionMode, onTap: _toggleSelectionMode),
+                      ],
                       const SizedBox(width: 8),
                       _OverflowButton(
                         showInviteAndSettings: !isViewer,
@@ -255,6 +327,8 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
                             Navigator.of(context).push(
                               MaterialPageRoute(builder: (_) => BoardSettingsScreen(board: board)),
                             );
+                          } else if (value == 'export') {
+                            _exportCsv(board);
                           }
                         },
                       ),
@@ -324,14 +398,108 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
                       onOpenTask: _openTask,
                       onOpenNewTask: _openNewTask,
                       canEdit: !isViewer,
+                      selectionMode: _selectionMode,
+                      selectedTaskIds: _selectedIds,
+                      onToggleSelect: _toggleSelect,
                     );
                   },
                 ),
               ),
             ),
             ],
+            if (_selectionMode && _selectedIds.isNotEmpty)
+              _BulkActionBar(
+                count: _selectedIds.length,
+                onMove: _bulkMove,
+                onDelete: _bulkDelete,
+              ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SelectModeButton extends StatelessWidget {
+  final bool active;
+  final VoidCallback onTap;
+  const _SelectModeButton({required this.active, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(11),
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: active ? AppColors.primary : theme.colorScheme.surface,
+          border: Border.all(color: active ? AppColors.primary : theme.dividerColor),
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: Icon(
+          Icons.checklist,
+          size: 18,
+          color: active ? Colors.white : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+        ),
+      ),
+    );
+  }
+}
+
+class _BulkActionBar extends StatelessWidget {
+  final int count;
+  final void Function(BoardColumnId) onMove;
+  final VoidCallback onDelete;
+  const _BulkActionBar({required this.count, required this.onMove, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: EdgeInsets.fromLTRB(16, 10, 16, 10 + MediaQuery.of(context).padding.bottom),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(top: BorderSide(color: theme.dividerColor)),
+      ),
+      child: Row(
+        children: [
+          Text(
+            '$count selected',
+            style: AppTextStyles.bodySmall(color: theme.colorScheme.onSurface).copyWith(fontWeight: FontWeight.w700),
+          ),
+          const Spacer(),
+          PopupMenuButton<BoardColumnId>(
+            tooltip: 'Move to',
+            onSelected: onMove,
+            itemBuilder: (context) => [
+              for (final c in BoardColumnId.values) PopupMenuItem(value: c, child: Text('Move to ${c.label}')),
+            ],
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              decoration: BoxDecoration(
+                color: AppColors.primaryTint,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text('Move to', style: AppTextStyles.bodySmall(color: AppColors.primary).copyWith(fontWeight: FontWeight.w700)),
+            ),
+          ),
+          const SizedBox(width: 10),
+          InkWell(
+            onTap: onDelete,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              decoration: BoxDecoration(
+                color: AppColors.priorityHighBg,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text('Delete', style: AppTextStyles.bodySmall(color: AppColors.priorityHigh).copyWith(fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -376,6 +544,7 @@ class _OverflowButton extends StatelessWidget {
       itemBuilder: (context) => [
         if (showInviteAndSettings) const PopupMenuItem(value: 'invite', child: Text('Invite')),
         const PopupMenuItem(value: 'activity', child: Text('Activity')),
+        const PopupMenuItem(value: 'export', child: Text('Export CSV')),
         if (showInviteAndSettings) const PopupMenuItem(value: 'settings', child: Text('Board settings')),
       ],
       child: Container(

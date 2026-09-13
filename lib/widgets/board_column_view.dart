@@ -28,6 +28,9 @@ class BoardColumnView extends StatelessWidget {
   final void Function(TaskCard task) onOpenTask;
   final void Function(BoardColumnId column) onOpenNewTask;
   final bool canEdit;
+  final bool selectionMode;
+  final Set<String> selectedTaskIds;
+  final void Function(String taskId)? onToggleSelect;
 
   const BoardColumnView({
     super.key,
@@ -44,6 +47,9 @@ class BoardColumnView extends StatelessWidget {
     required this.onOpenTask,
     required this.onOpenNewTask,
     this.canEdit = true,
+    this.selectionMode = false,
+    this.selectedTaskIds = const {},
+    this.onToggleSelect,
   });
 
   bool get _isHoverTarget => hoverColumn == columnId;
@@ -112,13 +118,15 @@ class BoardColumnView extends StatelessWidget {
                           task: tasks[i],
                           index: i,
                           columnId: columnId,
-                          canDrag: canEdit,
+                          canDrag: canEdit && !selectionMode,
                           onHover: onHover,
                           onDrop: onDrop,
                           onDragStarted: onDragStarted,
                           onDragEnd: onDragEnd,
                           onDragUpdateGlobal: onDragUpdateGlobal,
-                          onOpenTask: onOpenTask,
+                          onOpenTask: selectionMode ? (t) => onToggleSelect?.call(t.id) : onOpenTask,
+                          selectionMode: selectionMode,
+                          selected: selectedTaskIds.contains(tasks[i].id),
                         ),
                         const SizedBox(height: 9),
                       ],
@@ -176,6 +184,8 @@ class _CardSlot extends StatelessWidget {
   final void Function(DragUpdateDetails details) onDragUpdateGlobal;
   final void Function(TaskCard task) onOpenTask;
   final bool canDrag;
+  final bool selectionMode;
+  final bool selected;
 
   const _CardSlot({
     required this.task,
@@ -188,11 +198,40 @@ class _CardSlot extends StatelessWidget {
     required this.onDragUpdateGlobal,
     required this.onOpenTask,
     this.canDrag = true,
+    this.selectionMode = false,
+    this.selected = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final data = TaskDragData(taskId: task.id, fromColumn: task.column);
+
+    if (selectionMode) {
+      return Stack(
+        children: [
+          Opacity(
+            opacity: selected ? 0.55 : 1,
+            child: TaskCardWidget(task: task, onTap: () => onOpenTask(task)),
+          ),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: IgnorePointer(
+              child: Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: selected ? AppColors.primary : Colors.transparent,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: selected ? AppColors.primary : Theme.of(context).dividerColor, width: 1.6),
+                ),
+                child: selected ? const Icon(Icons.check, size: 14, color: Colors.white) : null,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
 
     if (!canDrag) {
       return TaskCardWidget(task: task, onTap: () => onOpenTask(task));

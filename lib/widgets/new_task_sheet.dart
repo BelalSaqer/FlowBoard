@@ -7,6 +7,7 @@ import '../providers/board_tasks_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_metrics.dart';
 import '../theme/app_text_styles.dart';
+import '../theme/label_colors.dart';
 import '../theme/priority_colors.dart';
 import 'member_avatar.dart';
 
@@ -37,6 +38,7 @@ class _NewTaskSheetState extends ConsumerState<NewTaskSheet> {
   Priority _priority = Priority.medium;
   late Member _assignee = widget.members.isNotEmpty ? widget.members.first : widget.currentMember;
   DateTime _dueDate = DateTime.now().add(const Duration(days: 7));
+  final Set<String> _labels = {};
   bool _submitting = false;
 
   @override
@@ -68,6 +70,7 @@ class _NewTaskSheetState extends ConsumerState<NewTaskSheet> {
           priority: _priority,
           assignee: _assignee,
           dueDate: _dueDate,
+          labels: _labels.toList(),
         );
     if (mounted) Navigator.of(context).pop();
   }
@@ -179,6 +182,28 @@ class _NewTaskSheetState extends ConsumerState<NewTaskSheet> {
                             ],
                           ),
                         ),
+                      ),
+                      const SizedBox(height: 18),
+                      _SectionLabel('LABELS'),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final entry in presetLabelColors.entries)
+                            _LabelChip(
+                              text: entry.key,
+                              color: entry.value,
+                              selected: _labels.contains(entry.key),
+                              onTap: () => setState(() {
+                                if (_labels.contains(entry.key)) {
+                                  _labels.remove(entry.key);
+                                } else {
+                                  _labels.add(entry.key);
+                                }
+                              }),
+                            ),
+                        ],
                       ),
                     ],
                   ),
@@ -299,6 +324,38 @@ class _PriorityPill extends StatelessWidget {
         child: Text(
           priority.label,
           style: AppTextStyles.bodySmall(color: active ? Colors.white : theme.colorScheme.onSurface).copyWith(fontWeight: FontWeight.w700),
+        ),
+      ),
+    );
+  }
+}
+
+class _LabelChip extends StatelessWidget {
+  final String text;
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+  const _LabelChip({required this.text, required this.color, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? color : theme.colorScheme.onSurface.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: selected ? color : theme.dividerColor),
+        ),
+        child: Text(
+          text,
+          style: AppTextStyles.bodySmall(
+            color: selected ? Colors.white : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+          ).copyWith(fontWeight: FontWeight.w700),
         ),
       ),
     );

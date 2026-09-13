@@ -1,0 +1,11 @@
+{
+  "name": "flowboard-e2e",
+  "private": true,
+  "description": "Live-browser E2E checks against the deployed FlowBoard app. Separate from flutter test (test/*_test.dart), which covers provider/widget logic offline — these instead verify things that only exist once deployed: real multi-user Firestore sync, OAuth popups, and deep links. Not run in CI (needs a live URL + browser download), run manually before/after a deploy.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}

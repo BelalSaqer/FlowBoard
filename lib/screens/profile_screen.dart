@@ -27,6 +27,7 @@ class ProfileScreen extends ConsumerStatefulWidget {
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final _bioController = TextEditingController();
   bool _bioLoaded = false;
+  DateTime? _lastUsernameAttempt;
 
   @override
   void dispose() {
@@ -222,6 +223,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
     );
     if (newUsername == null || newUsername.isEmpty || !mounted) return;
+
+    // A light client-side cooldown against rapid-fire claim attempts —
+    // the real race-safety guarantee is the `create`-only Firestore rule,
+    // this just blunts someone scripting a tight retry loop against it.
+    final now = DateTime.now();
+    if (_lastUsernameAttempt != null && now.difference(_lastUsernameAttempt!) < const Duration(seconds: 3)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Slow down a moment before trying another username.')),
+      );
+      return;
+    }
+    _lastUsernameAttempt = now;
+
     final error = await claimUsername(ref.read(firestoreProvider), uid, newUsername, previousUsername: currentUsername);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(

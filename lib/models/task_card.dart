@@ -16,6 +16,7 @@ class TaskCard {
   final List<SubTask> subtasks;
   final List<TaskComment> comments;
   final List<ActivityEntry> activity;
+  final List<String> labels;
 
   const TaskCard({
     required this.id,
@@ -28,7 +29,17 @@ class TaskCard {
     this.subtasks = const [],
     this.comments = const [],
     this.activity = const [],
+    this.labels = const [],
   });
+
+  bool get isOverdue =>
+      dueDate != null && column != BoardColumnId.done && dueDate!.isBefore(DateTime.now());
+
+  bool get isDueSoon =>
+      dueDate != null &&
+      column != BoardColumnId.done &&
+      !isOverdue &&
+      dueDate!.difference(DateTime.now()) <= const Duration(days: 2);
 
   TaskCard copyWith({
     String? title,
@@ -40,6 +51,7 @@ class TaskCard {
     List<SubTask>? subtasks,
     List<TaskComment>? comments,
     List<ActivityEntry>? activity,
+    List<String>? labels,
   }) {
     return TaskCard(
       id: id,
@@ -52,6 +64,7 @@ class TaskCard {
       subtasks: subtasks ?? this.subtasks,
       comments: comments ?? this.comments,
       activity: activity ?? this.activity,
+      labels: labels ?? this.labels,
     );
   }
 }

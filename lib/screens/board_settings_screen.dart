@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/board.dart';
 import '../providers/boards_provider.dart';
+import '../services/deep_link.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 import '../widgets/member_role_row.dart';
@@ -67,8 +68,24 @@ class _BoardSettingsScreenState extends ConsumerState<BoardSettingsScreen> {
       destructive: true,
     );
     if (confirmed != true || !mounted) return;
-    await ref.read(boardsProvider.notifier).deleteBoard(widget.board.id);
-    if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
+    final notifier = ref.read(boardsProvider.notifier);
+    final snapshot = await notifier.snapshotForUndo(widget.board.id);
+    if (!mounted) return;
+    Navigator.of(context).popUntil((r) => r.isFirst);
+
+    final controller = scaffoldMessengerKey.currentState?.showSnackBar(
+      SnackBar(
+        content: Text('"${widget.board.name}" deleted'),
+        action: SnackBarAction(label: 'Undo', onPressed: () {}),
+        duration: const Duration(seconds: 5),
+      ),
+    );
+    final reason = await controller?.closed;
+    if (reason == SnackBarClosedReason.action) {
+      await notifier.restoreBoard(snapshot);
+    } else {
+      await notifier.deleteBoard(widget.board.id);
+    }
   }
 
   Future<bool?> _confirm({

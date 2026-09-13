@@ -10,6 +10,15 @@ import '../screens/auth_gate.dart';
 import 'auth_provider.dart';
 import 'profile_provider.dart';
 
+/// Raw Firestore data for a board and its tasks, captured just before a
+/// delete so [BoardsNotifier.restoreBoard] can undo it.
+class BoardDeleteSnapshot {
+  final String boardId;
+  final Map<String, dynamic> boardData;
+  final Map<String, Map<String, dynamic>> tasks;
+  const BoardDeleteSnapshot({required this.boardId, required this.boardData, required this.tasks});
+}
+
 class BoardsNotifier extends StateNotifier<List<Board>> {
   final FirebaseFirestore db;
   final String? uid;
@@ -230,6 +239,31 @@ class BoardsNotifier extends StateNotifier<List<Board>> {
     }
     await batch.commit();
     await boardRef.delete();
+  }
+
+  /// Captures the board doc and every task doc's raw data, so a delete
+  /// can be undone within the confirmation snackbar's window (see
+  /// [BoardSettingsScreen]) by writing them straight back rather than
+  /// re-deriving state.
+  Future<BoardDeleteSnapshot> snapshotForUndo(String boardId) async {
+    final boardRef = db.collection('boards').doc(boardId);
+    final boardSnap = await boardRef.get();
+    final tasksSnap = await boardRef.collection('tasks').get();
+    return BoardDeleteSnapshot(
+      boardId: boardId,
+      boardData: boardSnap.data()!,
+      tasks: {for (final d in tasksSnap.docs) d.id: d.data()},
+    );
+  }
+
+  Future<void> restoreBoard(BoardDeleteSnapshot snapshot) async {
+    final boardRef = db.collection('boards').doc(snapshot.boardId);
+    await boardRef.set(snapshot.boardData);
+    final batch = db.batch();
+    for (final entry in snapshot.tasks.entries) {
+      batch.set(boardRef.collection('tasks').doc(entry.key), entry.value);
+    }
+    await batch.commit();
   }
 
   @override

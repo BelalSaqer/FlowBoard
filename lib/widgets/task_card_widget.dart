@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import '../models/board_column.dart';
 import '../models/task_card.dart';
+import '../theme/app_colors.dart';
 import '../theme/app_metrics.dart';
 import '../theme/app_text_styles.dart';
+import '../theme/label_colors.dart';
 import '../theme/priority_colors.dart';
 import 'member_avatar.dart';
 import 'priority_tag.dart';
@@ -70,6 +72,16 @@ class TaskCardWidget extends StatelessWidget {
                       color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
                     ).copyWith(height: 1.42),
                   ),
+                  if (task.labels.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 5,
+                      runSpacing: 5,
+                      children: [
+                        for (final l in task.labels) _LabelDot(text: l),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 11),
                   Row(
                     children: [
@@ -83,6 +95,10 @@ class TaskCardWidget extends StatelessWidget {
                           ),
                         ),
                       ],
+                      if (task.isOverdue || task.isDueSoon) ...[
+                        const SizedBox(width: 7),
+                        _DueBadge(overdue: task.isOverdue),
+                      ],
                       const Spacer(),
                       MemberAvatar(member: task.assignee, size: 22),
                     ],
@@ -92,6 +108,45 @@ class TaskCardWidget extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _LabelDot extends StatelessWidget {
+  final String text;
+  const _LabelDot({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = labelColor(text);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: AppTextStyles.metaTiny(color: color).copyWith(fontSize: 9.5, fontWeight: FontWeight.w800),
+      ),
+    );
+  }
+}
+
+class _DueBadge extends StatelessWidget {
+  final bool overdue;
+  const _DueBadge({required this.overdue});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = overdue ? AppColors.priorityHigh : AppColors.priorityMedium;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(6)),
+      child: Text(
+        overdue ? 'OVERDUE' : 'DUE SOON',
+        style: AppTextStyles.metaTiny(color: color).copyWith(fontSize: 8.5, fontWeight: FontWeight.w800),
       ),
     );
   }

@@ -29,6 +29,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   bool _filterOpen = false;
   final Set<Priority> _fPriority = {};
   final Set<String> _fAssigneeIds = {};
+  bool _fOverdue = false;
+  bool _fDueSoon = false;
 
   @override
   void dispose() {
@@ -36,7 +38,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     super.dispose();
   }
 
-  int get _filterCount => _fPriority.length + _fAssigneeIds.length;
+  int get _filterCount =>
+      _fPriority.length + _fAssigneeIds.length + (_fOverdue ? 1 : 0) + (_fDueSoon ? 1 : 0);
 
   List<TaskCard> _filter(Map<BoardColumnId, List<TaskCard>> tasksByColumn) {
     final query = _queryController.text.trim().toLowerCase();
@@ -49,6 +52,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       }
       if (_fPriority.isNotEmpty && !_fPriority.contains(t.priority)) return false;
       if (_fAssigneeIds.isNotEmpty && !_fAssigneeIds.contains(t.assignee.id)) return false;
+      if (_fOverdue && !t.isOverdue) return false;
+      if (_fDueSoon && !t.isDueSoon) return false;
       return true;
     }).toList();
   }
@@ -166,11 +171,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   board: widget.board,
                   selectedPriorities: _fPriority,
                   selectedAssigneeIds: _fAssigneeIds,
+                  overdue: _fOverdue,
+                  dueSoon: _fDueSoon,
                   onTogglePriority: (p) => setState(() => _fPriority.contains(p) ? _fPriority.remove(p) : _fPriority.add(p)),
                   onToggleAssignee: (id) => setState(() => _fAssigneeIds.contains(id) ? _fAssigneeIds.remove(id) : _fAssigneeIds.add(id)),
+                  onToggleOverdue: () => setState(() => _fOverdue = !_fOverdue),
+                  onToggleDueSoon: () => setState(() => _fDueSoon = !_fDueSoon),
                   onClear: () => setState(() {
                     _fPriority.clear();
                     _fAssigneeIds.clear();
+                    _fOverdue = false;
+                    _fDueSoon = false;
                   }),
                   onApply: () => setState(() => _filterOpen = false),
                 ),
@@ -207,8 +218,12 @@ class _FilterPanel extends StatelessWidget {
   final Board board;
   final Set<Priority> selectedPriorities;
   final Set<String> selectedAssigneeIds;
+  final bool overdue;
+  final bool dueSoon;
   final void Function(Priority) onTogglePriority;
   final void Function(String) onToggleAssignee;
+  final VoidCallback onToggleOverdue;
+  final VoidCallback onToggleDueSoon;
   final VoidCallback onClear;
   final VoidCallback onApply;
 
@@ -216,8 +231,12 @@ class _FilterPanel extends StatelessWidget {
     required this.board,
     required this.selectedPriorities,
     required this.selectedAssigneeIds,
+    required this.overdue,
+    required this.dueSoon,
     required this.onTogglePriority,
     required this.onToggleAssignee,
+    required this.onToggleOverdue,
+    required this.onToggleDueSoon,
     required this.onClear,
     required this.onApply,
   });
@@ -244,6 +263,16 @@ class _FilterPanel extends StatelessWidget {
                 _PriorityChip(priority: p, selected: selectedPriorities.contains(p), onTap: () => onTogglePriority(p)),
                 if (p != Priority.values.last) const SizedBox(width: 8),
               ],
+            ],
+          ),
+          const SizedBox(height: 16),
+          _SectionDivider(label: 'Due date', theme: theme),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _DueFilterChip(label: 'Overdue', selected: overdue, onTap: onToggleOverdue),
+              const SizedBox(width: 8),
+              _DueFilterChip(label: 'Due soon', selected: dueSoon, onTap: onToggleDueSoon),
             ],
           ),
           const SizedBox(height: 16),
@@ -339,6 +368,35 @@ class _PriorityChip extends StatelessWidget {
         ),
         child: Text(
           priority.label,
+          style: AppTextStyles.bodySmall(color: selected ? Colors.white : theme.colorScheme.onSurface.withValues(alpha: 0.6)).copyWith(fontWeight: FontWeight.w700),
+        ),
+      ),
+    );
+  }
+}
+
+class _DueFilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _DueFilterChip({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(11),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.priorityHigh : Colors.transparent,
+          border: Border.all(color: selected ? AppColors.priorityHigh : theme.dividerColor),
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: Text(
+          label,
           style: AppTextStyles.bodySmall(color: selected ? Colors.white : theme.colorScheme.onSurface.withValues(alpha: 0.6)).copyWith(fontWeight: FontWeight.w700),
         ),
       ),

@@ -133,5 +133,78 @@ void main() {
       final doc = await db.collection('boards').doc('board-1').collection('tasks').doc(id).get();
       expect(doc.exists, isFalse);
     });
+
+    test('addTask persists labels and setLabels overwrites them', () async {
+      final db = FakeFirebaseFirestore();
+      final notifier = _notifier(db);
+      await _settle();
+      await notifier.addTask(BoardColumnId.todo, 'Task', labels: ['Bug', 'Urgent']);
+      await _settle();
+      final id = notifier.state[BoardColumnId.todo]!.first.id;
+      expect(notifier.taskById(id)!.labels, ['Bug', 'Urgent']);
+
+      await notifier.setLabels(id, ['Design']);
+      await _settle();
+      expect(notifier.taskById(id)!.labels, ['Design']);
+    });
+
+    test('bulkMove moves every selected task into the target column', () async {
+      final db = FakeFirebaseFirestore();
+      final notifier = _notifier(db);
+      await _settle();
+      await notifier.addTask(BoardColumnId.todo, 'A');
+      await notifier.addTask(BoardColumnId.todo, 'B');
+      await notifier.addTask(BoardColumnId.inProgress, 'C');
+      await _settle();
+      final ids = notifier.state[BoardColumnId.todo]!.map((t) => t.id).toSet();
+
+      await notifier.bulkMove(ids, BoardColumnId.done);
+      await _settle();
+
+      expect(notifier.state[BoardColumnId.todo], isEmpty);
+      expect(notifier.state[BoardColumnId.done]!.map((t) => t.title).toSet(), {'A', 'B'});
+      expect(notifier.state[BoardColumnId.inProgress]!.map((t) => t.title), ['C']);
+    });
+
+    test('bulkDelete removes every selected task', () async {
+      final db = FakeFirebaseFirestore();
+      final notifier = _notifier(db);
+      await _settle();
+      await notifier.addTask(BoardColumnId.todo, 'A');
+      await notifier.addTask(BoardColumnId.todo, 'B');
+      await notifier.addTask(BoardColumnId.todo, 'C');
+      await _settle();
+      final ids = notifier.state[BoardColumnId.todo]!.map((t) => t.id).toList();
+
+      await notifier.bulkDelete({ids[0], ids[1]});
+      await _settle();
+
+      expect(notifier.state[BoardColumnId.todo]!.map((t) => t.title), ['C']);
+    });
+
+    test('addComment notifies a mentioned board member by username, but not a non-member', () async {
+      final db = FakeFirebaseFirestore();
+      await db.collection('usernames').doc('bobby').set({'uid': 'bob'});
+      await db.collection('users').doc('bob').set({'id': 'bob', 'name': 'Bob', 'initials': 'BO', 'color': AppColors.priorityHigh.toARGB32()});
+      await db.collection('usernames').doc('carol').set({'uid': 'carol'});
+      await db.collection('users').doc('carol').set({'id': 'carol', 'name': 'Carol', 'initials': 'CA', 'color': AppColors.priorityHigh.toARGB32()});
+
+      final notifier = _notifier(db, current: _alice);
+      await _settle();
+      // Bob is on the board (via assignee below); Carol is mentioned but
+      // never appears in boardMembers, so she should not be notified.
+      await notifier.addTask(BoardColumnId.todo, 'Task', assignee: _alice);
+      await _settle();
+      final id = notifier.state[BoardColumnId.todo]!.first.id;
+
+      await notifier.addComment(id, 'hey @bobby and @carol, take a look', boardMembers: const [_alice, _bob]);
+      await _settle();
+
+      final bobNotifs = await db.collection('users').doc('bob').collection('notifications').get();
+      final carolNotifs = await db.collection('users').doc('carol').collection('notifications').get();
+      expect(bobNotifs.docs, hasLength(1));
+      expect(bobNotifs.docs.first.data()['type'], 'mention');
+      expect(carolNotifs.docs, isEmpty);
+    });
   });
 }

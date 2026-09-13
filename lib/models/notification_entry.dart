@@ -1,6 +1,6 @@
 import 'member.dart';
 
-enum NotificationType { comment, assigned }
+enum NotificationType { comment, assigned, mention }
 
 class NotificationEntry {
   final String id;
@@ -26,5 +26,6 @@ class NotificationEntry {
   String get headline => switch (type) {
     NotificationType.comment => '${actor.name} commented on a task assigned to you',
     NotificationType.assigned => '${actor.name} assigned you',
+    NotificationType.mention => '${actor.name} mentioned you in a comment',
   };
 }

@@ -43,3 +43,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# E2E (Playwright) — installed deps and run artifacts, not source
+test/e2e/node_modules/
+test/e2e/test-results/
+test/e2e/playwright-report/

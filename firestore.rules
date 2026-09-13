@@ -55,7 +55,13 @@ service cloud.firestore {
     // by username, and to check availability before claiming).
     match /usernames/{name} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      // The format check (not just the client's pre-validation) is what
+      // actually stops someone from scripting past the app to reserve
+      // junk/oversized doc ids directly against the API.
+      allow create: if isSignedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid'])
+        && name.matches('^[a-z0-9_]{3,20}$');
       allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
       allow update: if false;
     }
