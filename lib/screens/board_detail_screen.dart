@@ -9,6 +9,7 @@ import '../models/task_card.dart';
 import '../providers/board_tasks_provider.dart';
 import '../providers/boards_provider.dart';
 import '../providers/profile_provider.dart';
+import '../services/deep_link.dart';
 import '../services/file_export.dart';
 import '../services/file_import.dart';
 import '../theme/app_colors.dart';
@@ -231,11 +232,31 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
     );
     if (confirmed != true || !mounted) return;
     final ids = Set<String>.from(_selectedIds);
+    final notifier = ref.read(boardTasksProvider(widget.board.id).notifier);
+    final snapshot = await notifier.snapshotForBulkDeleteUndo(ids);
+    if (!mounted) return;
     setState(() {
       _selectionMode = false;
       _selectedIds.clear();
     });
-    await ref.read(boardTasksProvider(widget.board.id).notifier).bulkDelete(ids);
+
+    // Deferred until the snackbar closes without Undo, same as single-task
+    // delete (task_detail_sheet.dart) and whole-board delete
+    // (board_settings_screen.dart) — shown on the app-level
+    // ScaffoldMessenger so the undo window survives navigating away.
+    final controller = scaffoldMessengerKey.currentState?.showSnackBar(
+      SnackBar(
+        content: Text('${ids.length} task${ids.length == 1 ? '' : 's'} deleted'),
+        action: SnackBarAction(label: 'Undo', onPressed: () {}),
+        duration: const Duration(seconds: 5),
+      ),
+    );
+    final reason = await controller?.closed;
+    if (reason == SnackBarClosedReason.action) {
+      await notifier.restoreBulkDelete(snapshot);
+    } else {
+      await notifier.bulkDelete(ids);
+    }
   }
 
   void _exportCsv(Board board) {

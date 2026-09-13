@@ -29,7 +29,9 @@ void captureInitialDeepLink() {
     if (segments.length == 2 && segments[0] == 'join') {
       _initialJoinBoardId = segments[1];
     }
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('captureInitialDeepLink: failed to parse Uri.base: $e');
+  }
 }
 
 /// Reads and clears the pending join board id, so it's only ever acted

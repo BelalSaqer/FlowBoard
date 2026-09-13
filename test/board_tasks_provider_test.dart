@@ -184,6 +184,63 @@ void main() {
       expect(notifier.state[BoardColumnId.todo]!.map((t) => t.title), ['C']);
     });
 
+    test('snapshotForBulkDeleteUndo captures raw task data, and restoreBulkDelete writes it straight back', () async {
+      final db = FakeFirebaseFirestore();
+      final notifier = _notifier(db);
+      await _settle();
+      await notifier.addTask(BoardColumnId.todo, 'A', labels: ['Bug']);
+      await notifier.addTask(BoardColumnId.todo, 'B');
+      await notifier.addTask(BoardColumnId.todo, 'C');
+      await _settle();
+      final ids = notifier.state[BoardColumnId.todo]!.map((t) => t.id).toList();
+      final targetIds = {ids[0], ids[1]};
+
+      final snapshot = await notifier.snapshotForBulkDeleteUndo(targetIds);
+      expect(snapshot.tasks.keys.toSet(), targetIds);
+      expect(snapshot.tasks[ids[0]]!['title'], 'A');
+      expect(snapshot.tasks[ids[0]]!['labels'], ['Bug']);
+
+      // Simulates the deferred-delete flow: the real delete only runs if
+      // Undo was *not* tapped, so restoring never needs to run alongside
+      // it in the same test — but confirm the round trip independently
+      // of bulkDelete itself, since that's already covered above.
+      await notifier.bulkDelete(targetIds);
+      await _settle();
+      expect(notifier.state[BoardColumnId.todo]!.map((t) => t.title), ['C']);
+
+      await notifier.restoreBulkDelete(snapshot);
+      await _settle();
+      expect(notifier.state[BoardColumnId.todo]!.map((t) => t.title).toSet(), {'A', 'B', 'C'});
+      final restoredA = notifier.state[BoardColumnId.todo]!.firstWhere((t) => t.title == 'A');
+      expect(restoredA.labels, ['Bug']);
+    });
+
+    test('restoreBulkDelete attributes the restore to whoever undid it, not the original snapshot\'s author', () async {
+      // FakeFirebaseFirestore doesn't enforce security rules, so this
+      // can't catch a permission-denied the way live testing did — but it
+      // does pin the actual bug: writing the raw snapshot verbatim would
+      // silently carry Alice's uid into `updatedBy` even though Bob is the
+      // one performing the restore, which the real tasks rule
+      // (`updatedBy.id == request.auth.uid`) rejects outright.
+      final db = FakeFirebaseFirestore();
+      final asAlice = _notifier(db, current: _alice);
+      await _settle();
+      await asAlice.addTask(BoardColumnId.todo, 'A');
+      await _settle();
+      final id = asAlice.state[BoardColumnId.todo]!.first.id;
+
+      final asBob = _notifier(db, current: _bob);
+      final snapshot = await asBob.snapshotForBulkDeleteUndo({id});
+      expect(snapshot.tasks[id]!['updatedBy']['id'], 'alice');
+
+      await asBob.bulkDelete({id});
+      await asBob.restoreBulkDelete(snapshot);
+      await _settle();
+
+      final doc = await db.collection('boards').doc('board-1').collection('tasks').doc(id).get();
+      expect(doc.data()!['updatedBy']['id'], 'bob');
+    });
+
     test('addComment notifies a mentioned board member by username, but not a non-member', () async {
       final db = FakeFirebaseFirestore();
       await db.collection('usernames').doc('bobby').set({'uid': 'bob'});

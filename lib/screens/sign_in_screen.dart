@@ -115,7 +115,9 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
         // already linked elsewhere) — they're signed in either way.
         try {
           await auth.currentUser!.linkWithCredential(pendingCredential);
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('_signInWithEmail: failed to link pending OAuth credential: $e');
+        }
       }
     } on FirebaseAuthException catch (e) {
       // Firebase now returns the same ambiguous code (invalid-credential,

@@ -10,6 +10,7 @@ import '../models/board.dart';
 import '../models/member.dart';
 import '../theme/app_colors.dart';
 import '../screens/auth_gate.dart';
+import '../services/deep_link.dart';
 import 'auth_provider.dart';
 import 'profile_provider.dart';
 
@@ -55,7 +56,7 @@ class BoardsNotifier extends StateNotifier<List<Board>> {
           };
           _backfillMembership(snap.docs);
           _recompute();
-        }, onError: (_) {});
+        }, onError: (Object e) => _onListenerError('boards', e));
 
     // The seed/demo boards are a guest-only sandbox for visualization —
     // real accounts (Google or email) start with a genuinely empty
@@ -75,7 +76,20 @@ class BoardsNotifier extends StateNotifier<List<Board>> {
           };
           _backfillMembership(snap.docs);
           _recompute();
-        }, onError: (_) {});
+        }, onError: (Object e) => _onListenerError('demo boards', e));
+  }
+
+  // A silently-dropped listener here means the boards list a user is
+  // actively looking at just stops updating with no indication why
+  // (permission changes after a rules deploy, a network drop, etc.) — at
+  // minimum this needs to be visible in logs, and since this is the main
+  // data on screen, a transient banner via the same app-level
+  // ScaffoldMessenger the undo snackbars already use.
+  void _onListenerError(String what, Object error) {
+    debugPrint('BoardsNotifier: $what listener error: $error');
+    scaffoldMessengerKey.currentState?.showSnackBar(
+      SnackBar(content: Text('Lost the live connection to your $what.')),
+    );
   }
 
   void _recompute() {
@@ -344,7 +358,11 @@ class PresenceNotifier extends StateNotifier<List<Member>> {
             _docs = snap.docs;
             _recompute();
           },
-          onError: (_) {},
+          // Logged, but deliberately no banner here unlike the board/task
+          // list listeners above — presence is a "who else is viewing"
+          // nicety, not the data the user actually came for, so a
+          // transient failure here just isn't worth interrupting them for.
+          onError: (Object e) => debugPrint('PresenceNotifier: listener error for board $boardId: $e'),
         );
     _sweepTimer = Timer.periodic(const Duration(seconds: 8), (_) => _recompute());
   }

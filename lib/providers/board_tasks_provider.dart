@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/csv_export.dart';
 import '../data/firestore_mappers.dart';
@@ -12,6 +13,7 @@ import '../models/subtask.dart';
 import '../models/notification_entry.dart';
 import '../models/task_card.dart';
 import '../providers/notifications_provider.dart';
+import '../services/deep_link.dart';
 import '../services/gemini_service.dart' as gemini;
 import '../theme/app_colors.dart';
 import 'profile_provider.dart';
@@ -36,6 +38,14 @@ class BulkImportResult {
   const BulkImportResult({required this.count, required this.warnings});
 }
 
+/// Raw Firestore data for a set of tasks, captured just before a bulk
+/// delete so it can be undone — mirrors [BoardDeleteSnapshot] in
+/// boards_provider.dart.
+class BulkTaskDeleteSnapshot {
+  final Map<String, Map<String, dynamic>> tasks;
+  const BulkTaskDeleteSnapshot({required this.tasks});
+}
+
 /// Holds the task cards for one board, grouped by column, streamed live
 /// from `boards/{boardId}/tasks`. Every mutation writes to Firestore and
 /// the resulting state update flows back through the same snapshot
@@ -50,7 +60,20 @@ class BoardTasksNotifier extends StateNotifier<BoardTasksState> {
   Map<String, TaskDoc> _docsById = {};
 
   BoardTasksNotifier(this.db, this.boardId, this.currentMember) : super(_emptyState()) {
-    _sub = _tasksCol.orderBy('order').snapshots().listen(_onSnapshot, onError: (_) {});
+    _sub = _tasksCol.orderBy('order').snapshots().listen(_onSnapshot, onError: _onSnapshotError);
+  }
+
+  // A silently-dropped listener here means the board a user is actively
+  // looking at just stops updating with no indication why (permission
+  // changes after a rules deploy, a network drop, etc.) — at minimum this
+  // needs to be visible in logs, and since this is the main data on
+  // screen, a transient banner via the same app-level ScaffoldMessenger
+  // the undo snackbars already use.
+  void _onSnapshotError(Object error) {
+    debugPrint('BoardTasksNotifier: tasks listener error for board $boardId: $error');
+    scaffoldMessengerKey.currentState?.showSnackBar(
+      const SnackBar(content: Text("Lost the live connection to this board's tasks.")),
+    );
   }
 
   CollectionReference<Map<String, dynamic>> get _tasksCol =>
@@ -101,6 +124,19 @@ class BoardTasksNotifier extends StateNotifier<BoardTasksState> {
     await _tasksCol.doc(taskId).update(update);
   }
 
+  // Known limitation: repeatedly inserting between the same two neighbors
+  // (e.g. always dropping a card into the same gap) halves the remaining
+  // gap each time via (a+b)/2, so double-precision limits mean enough
+  // repeated insertions at that exact position will eventually produce a
+  // collision (two tasks with an identical `order`) — they'd sort
+  // arbitrarily relative to each other until one of them moves again. In
+  // practice this needs dozens of insertions at the *exact* same spot
+  // without ever touching the rest of the column, which real usage
+  // doesn't hit, so it's left undefended for now rather than adding
+  // periodic rebalancing (recomputing clean integer-spaced orders for a
+  // column) — that would need to safely batch-rewrite every sibling
+  // under concurrent drags from other viewers, which is real scope, not
+  // a small fix.
   double _orderForIndex(List<TaskCard> siblingsExcludingSelf, int index) {
     final orders = [for (final t in siblingsExcludingSelf) _docsById[t.id]!.order];
     if (orders.isEmpty) return 1000.0;
@@ -132,7 +168,10 @@ class BoardTasksNotifier extends StateNotifier<BoardTasksState> {
     });
   }
 
-  static final _mentionPattern = RegExp(r'@([a-z0-9_]{3,20})', caseSensitive: false);
+  // Negative lookbehind stops this from firing inside a plain email
+  // address ("ahmed@company.com" would otherwise parse "@company" as a
+  // mention) — the @ can't be immediately preceded by a letter or digit.
+  static final _mentionPattern = RegExp(r'(?<![a-zA-Z0-9])@([a-z0-9_]{3,20})', caseSensitive: false);
 
   Future<void> addComment(String taskId, String body, {List<Member> boardMembers = const []}) async {
     final trimmed = body.trim();
@@ -240,6 +279,43 @@ class BoardTasksNotifier extends StateNotifier<BoardTasksState> {
         'updatedAt': FieldValue.serverTimestamp(),
         'updatedBy': memberToMap(me),
       });
+    }
+    await batch.commit();
+  }
+
+  /// Captures every selected task's raw data, so a bulk delete can be
+  /// undone within the confirmation snackbar's window (see
+  /// [BoardDetailScreen]) by writing them straight back — the same
+  /// snapshot-before-delete pattern [BoardsNotifier.snapshotForUndo] uses
+  /// for whole-board deletion.
+  Future<BulkTaskDeleteSnapshot> snapshotForBulkDeleteUndo(Set<String> taskIds) async {
+    final tasks = <String, Map<String, dynamic>>{};
+    for (final id in taskIds) {
+      final snap = await _tasksCol.doc(id).get();
+      final data = snap.data();
+      if (data != null) tasks[id] = data;
+    }
+    return BulkTaskDeleteSnapshot(tasks: tasks);
+  }
+
+  /// Writes each snapshotted task straight back — but stamped with the
+  /// *current* user as `updatedBy`/`updatedAt`, not the original snapshot's
+  /// values. Writing the raw snapshot verbatim would carry whoever last
+  /// touched that task before the delete (almost never the person tapping
+  /// Undo) into `updatedBy`, which fails the tasks rule's identity check
+  /// (`request.resource.data.updatedBy.id == request.auth.uid`) with a
+  /// permission-denied — caught by actually tapping Undo against the live
+  /// rules rather than trusting the round trip in isolation. Attributing
+  /// the restore to whoever undid it is also just the honest answer: they
+  /// really are the one who caused this write.
+  Future<void> restoreBulkDelete(BulkTaskDeleteSnapshot snapshot) async {
+    final me = currentMember();
+    final batch = db.batch();
+    for (final entry in snapshot.tasks.entries) {
+      final data = Map<String, dynamic>.from(entry.value);
+      data['updatedAt'] = FieldValue.serverTimestamp();
+      data['updatedBy'] = memberToMap(me);
+      batch.set(_tasksCol.doc(entry.key), data);
     }
     await batch.commit();
   }

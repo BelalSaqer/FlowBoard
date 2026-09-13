@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/firestore_mappers.dart';
 import '../data/personas.dart';
@@ -114,7 +115,13 @@ Future<String?> claimUsername(FirebaseFirestore db, String uid, String desired, 
   if (previousUsername != null && previousUsername.isNotEmpty && previousUsername != normalized) {
     try {
       await db.collection('usernames').doc(previousUsername).delete();
-    } catch (_) {}
+    } catch (e) {
+      // Best-effort cleanup of the old reservation — not fatal if it
+      // fails (the new username is already claimed either way), but
+      // logged so an old username silently never getting released isn't
+      // completely invisible.
+      debugPrint('claimUsername: failed to release previous username "$previousUsername": $e');
+    }
   }
   await db.collection('users').doc(uid).set({'username': normalized}, SetOptions(merge: true));
   return null;

@@ -18,7 +18,7 @@ class RichToken {
 }
 
 final _tokenPattern = RegExp(
-  r'(@[a-z0-9_]{3,20})' // @mention
+  r'((?<![a-zA-Z0-9])@[a-z0-9_]{3,20})' // @mention — not inside an email address
   r'|(\*\*[^*\n]+\*\*)' // **bold**
   r'|(\*[^*\n]+\*)' // *italic*
   r'|(`[^`\n]+`)' // `code`
