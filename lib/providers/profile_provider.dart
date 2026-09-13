@@ -64,6 +64,71 @@ Future<Member?> findMemberByEmail(FirebaseFirestore db, String email) async {
   return memberFromMap(snap.docs.first.data());
 }
 
+/// Looks up a signed-in user by their reserved username (works for any
+/// account type, including guests, since a username isn't tied to an
+/// email provider). Returns null if no account matches.
+Future<Member?> findMemberByUsername(FirebaseFirestore db, String username) async {
+  final normalized = username.trim().toLowerCase();
+  if (normalized.isEmpty) return null;
+  final mapping = await db.collection('usernames').doc(normalized).get();
+  if (!mapping.exists) return null;
+  final uid = mapping.data()!['uid'] as String;
+  final userDoc = await db.collection('users').doc(uid).get();
+  if (!userDoc.exists) return null;
+  return memberFromMap(userDoc.data()!);
+}
+
+final _usernamePattern = RegExp(r'^[a-z0-9_]{3,20}$');
+
+/// Attempts to reserve [desired] for [uid], releasing [previousUsername]
+/// (if any) once the new one is secured. Returns null on success, or a
+/// user-facing error string. The reservation doc's `create`-only rule is
+/// what actually makes this race-safe against two users claiming the
+/// same name at once — the pre-check here is just for a nicer error
+/// message on the common case.
+Future<String?> claimUsername(FirebaseFirestore db, String uid, String desired, {String? previousUsername}) async {
+  final normalized = desired.trim().toLowerCase();
+  if (!_usernamePattern.hasMatch(normalized)) {
+    return 'Usernames must be 3-20 characters: letters, numbers, and underscores only.';
+  }
+  if (normalized == previousUsername) return null;
+
+  final ref = db.collection('usernames').doc(normalized);
+  final existing = await ref.get();
+  if (existing.exists) {
+    // Reserved by someone else: a real conflict. Reserved by this same
+    // uid already: most likely a previous attempt got interrupted after
+    // claiming the name but before finishing (e.g. the tab closed) —
+    // treat it as success rather than telling the user their own name
+    // is taken and leaving them unable to ever use it.
+    if (existing.data()?['uid'] != uid) {
+      return 'That username is already taken.';
+    }
+  } else {
+    try {
+      await ref.set({'uid': uid});
+    } catch (_) {
+      return 'That username is already taken.';
+    }
+  }
+  if (previousUsername != null && previousUsername.isNotEmpty && previousUsername != normalized) {
+    try {
+      await db.collection('usernames').doc(previousUsername).delete();
+    } catch (_) {}
+  }
+  await db.collection('users').doc(uid).set({'username': normalized}, SetOptions(merge: true));
+  return null;
+}
+
+/// Live avatar photo for [uid], watched by [MemberAvatar] so a photo set
+/// on the profile screen shows up everywhere that member is rendered —
+/// task cards, comments, presence, invite lists — without needing to be
+/// denormalized into every place a [Member] snapshot is stored.
+final memberPhotoProvider = StreamProvider.autoDispose.family<String?, String>((ref, uid) {
+  final db = ref.watch(firestoreProvider);
+  return db.collection('users').doc(uid).snapshots().map((s) => s.data()?['photoBase64'] as String?);
+});
+
 String initialsFor(String name) {
   final parts = name.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
   if (parts.isEmpty) return '?';

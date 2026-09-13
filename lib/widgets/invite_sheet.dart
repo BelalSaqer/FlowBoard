@@ -38,10 +38,10 @@ class _InviteSheetState extends ConsumerState<InviteSheet> {
   }
 
   Future<void> _addMember(Board board) async {
-    final email = _emailController.text.trim();
-    if (email.isEmpty) {
+    final input = _emailController.text.trim();
+    if (input.isEmpty) {
       setState(() {
-        _error = 'Enter an email address.';
+        _error = 'Enter an email or username.';
         _success = null;
       });
       return;
@@ -53,12 +53,18 @@ class _InviteSheetState extends ConsumerState<InviteSheet> {
     });
 
     final db = ref.read(firestoreProvider);
-    final found = await findMemberByEmail(db, email);
+    // A username can't contain '@' in the middle of an email address, so
+    // this split is unambiguous; a leading '@' (as shown on profiles) is
+    // just username-prefix punctuation, not an email marker.
+    final isEmail = input.contains('@') && !input.startsWith('@');
+    final found = isEmail
+        ? await findMemberByEmail(db, input)
+        : await findMemberByUsername(db, input.startsWith('@') ? input.substring(1) : input);
 
     if (found == null) {
       setState(() {
         _busy = false;
-        _error = 'No account found for that email.';
+        _error = isEmail ? 'No account found for that email.' : 'No account found for that username.';
       });
       return;
     }
@@ -182,7 +188,7 @@ class _InviteSheetState extends ConsumerState<InviteSheet> {
               Text('ADD MEMBER', style: AppTextStyles.meta(color: theme.colorScheme.onSurface.withValues(alpha: 0.5)).copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.4)),
               const SizedBox(height: 8),
               Text(
-                'Only works for people who\'ve signed in with Google — guests have no email on file.',
+                'By email (Google accounts only) or by @username (works for anyone who\'s set one).',
                 style: AppTextStyles.metaSmall(color: theme.colorScheme.onSurface.withValues(alpha: 0.45)).copyWith(height: 1.4),
               ),
               const SizedBox(height: 8),
@@ -198,12 +204,12 @@ class _InviteSheetState extends ConsumerState<InviteSheet> {
                       ),
                       child: TextField(
                         controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
+                        keyboardType: TextInputType.text,
                         style: AppTextStyles.bodySmall(color: theme.colorScheme.onSurface).copyWith(fontWeight: FontWeight.w600),
                         decoration: InputDecoration(
                           isDense: true,
                           border: InputBorder.none,
-                          hintText: 'person@company.com',
+                          hintText: 'email or @username',
                           hintStyle: AppTextStyles.bodySmall(color: theme.colorScheme.onSurface.withValues(alpha: 0.35)),
                         ),
                         onSubmitted: (_) => _addMember(board),

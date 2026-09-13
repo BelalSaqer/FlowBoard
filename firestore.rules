@@ -47,6 +47,19 @@ service cloud.firestore {
       }
     }
 
+    // Username reservation: `create` only succeeds if the doc doesn't
+    // already exist, so two users racing to claim the same name can't
+    // both win — Firestore serializes the writes and the loser's
+    // request is evaluated as an `update` (no rule allows it), not a
+    // `create`. Anyone signed in can read it (needed to look someone up
+    // by username, and to check availability before claiming).
+    match /usernames/{name} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow update: if false;
+    }
+
     match /boards/{boardId} {
       function isDemoBoard() {
         return resource.data.isDemo == true && isAnonymousUser();

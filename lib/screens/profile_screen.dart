@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image/image.dart' as img;
+import 'package:image_picker/image_picker.dart';
 import '../providers/auth_provider.dart';
 import '../providers/profile_provider.dart';
 import '../providers/theme_provider.dart';
@@ -12,6 +15,7 @@ import '../widgets/member_avatar.dart';
 import 'auth_gate.dart';
 
 const _maxBioLength = 160;
+const _maxPhotoBytes = 180 * 1024;
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -101,6 +105,130 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     ref.invalidate(currentMemberProvider);
   }
 
+  // Secondary avatar options (color, remove photo) go through a dialog —
+  // that's fine for them since they don't need a native file picker.
+  // Uploading a photo does NOT go through this dialog: browsers only
+  // honor a file <input>.click() as a genuine user gesture when it
+  // happens with no `await` gaps back to the original tap, and a
+  // showDialog round-trip (itself async, resolving on a later frame)
+  // breaks that chain — the picker would silently no-op. So the camera
+  // button below calls _uploadPhoto directly instead.
+  Future<void> _avatarOptionsMenu(String uid, Color currentColor, bool hasPhoto) async {
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Avatar options'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop('color'),
+            child: const Text('Pick a color'),
+          ),
+          if (hasPhoto)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop('remove'),
+              child: const Text('Remove photo', style: TextStyle(color: AppColors.priorityHigh)),
+            ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case 'color':
+        await _pickAvatarColor(uid, currentColor);
+      case 'remove':
+        await ref.read(firestoreProvider).collection('users').doc(uid).update({'photoBase64': FieldValue.delete()});
+    }
+  }
+
+  Future<void> _uploadPhoto(String uid) async {
+    XFile? file;
+    try {
+      file = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1024, maxHeight: 1024);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not open the photo picker: $e')));
+      }
+      return;
+    }
+    if (file == null) return;
+
+    final bytes = await file.readAsBytes();
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('That file could not be read as an image.')),
+        );
+      }
+      return;
+    }
+
+    // Downscale to a small square-ish thumbnail — this is stored inline
+    // on the user doc (no Firebase Storage, which now requires the paid
+    // Blaze plan even for free-tier usage), so it needs to stay well
+    // under Firestore's 1 MiB document limit regardless of the source
+    // photo's size.
+    final longestSide = decoded.width > decoded.height ? decoded.width : decoded.height;
+    final resized = longestSide > 256
+        ? img.copyResize(
+            decoded,
+            width: decoded.width >= decoded.height ? 256 : null,
+            height: decoded.height > decoded.width ? 256 : null,
+          )
+        : decoded;
+
+    var quality = 82;
+    var jpg = img.encodeJpg(resized, quality: quality);
+    while (jpg.length > _maxPhotoBytes && quality > 25) {
+      quality -= 15;
+      jpg = img.encodeJpg(resized, quality: quality);
+    }
+    if (jpg.length > _maxPhotoBytes) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('That photo is too large even after compression — try a different one.')),
+        );
+      }
+      return;
+    }
+
+    await ref.read(firestoreProvider).collection('users').doc(uid).set(
+      {'photoBase64': base64Encode(jpg)},
+      SetOptions(merge: true),
+    );
+  }
+
+  Future<void> _editUsername(String uid, String? currentUsername) async {
+    final controller = TextEditingController(text: currentUsername ?? '');
+    final newUsername = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Choose a username'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            prefixText: '@',
+            hintText: 'letters, numbers, underscore',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('Save', style: TextStyle(color: AppColors.primary)),
+          ),
+        ],
+      ),
+    );
+    if (newUsername == null || newUsername.isEmpty || !mounted) return;
+    final error = await claimUsername(ref.read(firestoreProvider), uid, newUsername, previousUsername: currentUsername);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(error ?? 'Username set to @${newUsername.toLowerCase()}')),
+    );
+  }
+
   Future<void> _linkGoogle() async {
     final auth = ref.read(firebaseAuthProvider);
     try {
@@ -136,6 +264,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               stream: db.collection('users').doc(me.id).snapshots(),
               builder: (context, snap) {
                 final bio = snap.data?.data()?['bio'] as String? ?? '';
+                final photoBase64 = snap.data?.data()?['photoBase64'] as String?;
+                final hasPhoto = photoBase64 != null && photoBase64.isNotEmpty;
+                final username = snap.data?.data()?['username'] as String?;
                 if (!_bioLoaded && snap.hasData) {
                   _bioController.text = bio;
                   _bioLoaded = true;
@@ -147,10 +278,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     children: [
                       Row(
                         children: [
+                          _BackButton(onTap: () => Navigator.of(context).maybePop()),
+                          const SizedBox(width: 12),
                           Text('Profile', style: AppTextStyles.h2(color: theme.colorScheme.onSurface)),
                           const Spacer(),
                           IconButton(
-                            onPressed: () {},
+                            onPressed: () => _avatarOptionsMenu(me.id, me.color, hasPhoto),
                             icon: Icon(Icons.more_horiz, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
                           ),
                         ],
@@ -164,7 +297,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               right: 0,
                               bottom: 0,
                               child: InkWell(
-                                onTap: () => _pickAvatarColor(me.id, me.color),
+                                onTap: () => _uploadPhoto(me.id),
                                 borderRadius: BorderRadius.circular(999),
                                 child: Container(
                                   padding: const EdgeInsets.all(7),
@@ -173,7 +306,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                     shape: BoxShape.circle,
                                     border: Border.all(color: AppColors.primary, width: 1.4),
                                   ),
-                                  child: const Icon(Icons.palette_outlined, size: 16, color: AppColors.primary),
+                                  child: const Icon(Icons.camera_alt_outlined, size: 16, color: AppColors.primary),
                                 ),
                               ),
                             ),
@@ -186,6 +319,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           onTap: () => _editName(me.id, me.name),
                           borderRadius: BorderRadius.circular(8),
                           child: Text(me.name, style: AppTextStyles.h2(color: theme.colorScheme.onSurface)),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Center(
+                        child: InkWell(
+                          onTap: () => _editUsername(me.id, username),
+                          borderRadius: BorderRadius.circular(6),
+                          child: Text(
+                            username != null && username.isNotEmpty ? '@$username' : 'Set a username',
+                            style: AppTextStyles.bodySmall(color: AppColors.primary).copyWith(fontWeight: FontWeight.w600),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -344,6 +488,30 @@ class _ThemeSelector extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _BackButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _BackButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(11),
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          border: Border.all(color: theme.dividerColor),
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: Icon(Icons.arrow_back_ios_new, size: 14, color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
       ),
     );
   }
