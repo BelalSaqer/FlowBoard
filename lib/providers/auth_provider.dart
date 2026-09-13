@@ -17,6 +17,17 @@ Future<void> signInWithGoogle(FirebaseAuth auth) async {
   await auth.signInWithPopup(GoogleAuthProvider());
 }
 
+/// Generic OAuthProvider('microsoft.com') — covers personal Microsoft
+/// accounts and Entra ID (Azure AD) work/school accounts alike. Requires
+/// "Microsoft" to be enabled as a sign-in provider in the Firebase
+/// console, which in turn needs an app registration in Azure Portal
+/// (free, no billing) supplying the Application (client) ID/secret —
+/// see the setup notes wherever this is called from the UI.
+Future<void> signInWithMicrosoft(FirebaseAuth auth) async {
+  final provider = OAuthProvider('microsoft.com');
+  await auth.signInWithPopup(provider);
+}
+
 Future<void> signInAsGuest(FirebaseAuth auth) async {
   await auth.signInAnonymously();
 }
@@ -59,7 +70,7 @@ String friendlyAuthErrorMessage(Object error) {
     case 'cancelled-popup-request':
       return 'Sign-in was cancelled.';
     case 'operation-not-allowed':
-      return 'Email sign-in isn\'t enabled for this app yet.';
+      return 'This sign-in method isn\'t enabled for this app yet.';
     default:
       return error.message ?? 'Something went wrong. Please try again.';
   }

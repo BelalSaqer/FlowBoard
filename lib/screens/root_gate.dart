@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../theme/app_colors.dart';
 import 'auth_gate.dart';
 import 'onboarding_screen.dart';
+import 'splash_screen.dart';
 
 const _hasSeenOnboardingKey = 'hasSeenOnboarding';
 
@@ -40,7 +40,7 @@ class _RootGateState extends State<RootGate> {
   @override
   Widget build(BuildContext context) {
     if (_showOnboarding == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator(color: AppColors.primary)));
+      return const SplashScreen();
     }
     if (_showOnboarding!) {
       return OnboardingScreen(onDone: _completeOnboarding);

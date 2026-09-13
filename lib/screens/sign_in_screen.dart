@@ -6,8 +6,9 @@ import '../theme/app_colors.dart';
 import '../theme/app_metrics.dart';
 import '../theme/app_text_styles.dart';
 import '../widgets/flowboard_logo.dart';
+import '../widgets/oauth_icons.dart';
 
-enum _SignInFailureChoice { createAccount, useGoogle }
+enum _SignInFailureChoice { createAccount, useGoogle, useMicrosoft }
 
 class SignInScreen extends ConsumerStatefulWidget {
   const SignInScreen({super.key});
@@ -21,11 +22,11 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
   String? _error;
   bool _emailExpanded = false;
 
-  // Set when Google sign-in fails because this email already has a
-  // password-based account — captured so it can be linked automatically
-  // once the user signs in with that password below, instead of ending
-  // up with two disconnected accounts for the same email.
-  AuthCredential? _pendingGoogleCredential;
+  // Set when a Google/Microsoft sign-in fails because this email already
+  // has a password-based account — captured so it can be linked
+  // automatically once the user signs in with that password below,
+  // instead of ending up with two disconnected accounts for one email.
+  AuthCredential? _pendingOAuthCredential;
 
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -51,13 +52,17 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     }
   }
 
-  Future<void> _signInWithGoogle(FirebaseAuth auth) async {
+  Future<void> _signInWithGoogle(FirebaseAuth auth) => _signInWithOAuth(auth, 'Google', () => signInWithGoogle(auth));
+
+  Future<void> _signInWithMicrosoft(FirebaseAuth auth) => _signInWithOAuth(auth, 'Microsoft', () => signInWithMicrosoft(auth));
+
+  Future<void> _signInWithOAuth(FirebaseAuth auth, String providerLabel, Future<void> Function() signIn) async {
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      await signInWithGoogle(auth);
+      await signIn();
     } on FirebaseAuthException catch (e) {
       // Firebase's email-enumeration protection can report this as the
       // generic invalid-credential code rather than the more specific
@@ -69,11 +74,11 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
         setState(() {
           _emailExpanded = true;
           _emailController.text = email;
-          _pendingGoogleCredential = e.credential;
-          _error = 'An account already exists for $email with a password. Sign in below, and your Google account will be linked for next time.';
+          _pendingOAuthCredential = e.credential;
+          _error = 'An account already exists for $email with a password. Sign in below, and your $providerLabel account will be linked for next time.';
         });
       } else {
-        setState(() => _error = 'Google sign-in failed. If you already have a FlowBoard account with this email and a password, sign in with that instead.');
+        setState(() => _error = '$providerLabel sign-in failed. If you already have a FlowBoard account with this email and a password, sign in with that instead.');
       }
     } catch (e) {
       if (mounted) setState(() => _error = friendlyAuthErrorMessage(e));
@@ -95,11 +100,11 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     });
     try {
       await signInWithEmail(auth, email, password);
-      final pendingCredential = _pendingGoogleCredential;
+      final pendingCredential = _pendingOAuthCredential;
       if (pendingCredential != null) {
-        _pendingGoogleCredential = null;
-        // Best-effort: link the Google credential so next time they can
-        // just tap "Continue with Google". Not fatal if it fails (e.g.
+        _pendingOAuthCredential = null;
+        // Best-effort: link the OAuth credential so next time they can
+        // just tap the provider button. Not fatal if it fails (e.g.
         // already linked elsewhere) — they're signed in either way.
         try {
           await auth.currentUser!.linkWithCredential(pendingCredential);
@@ -111,15 +116,17 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
       // both "no such account" and "wrong password", as an email-enumeration
       // protection — and that same protection makes
       // fetchSignInMethodsForEmail() return nothing useful too, so we can't
-      // silently detect a Google-only account here. Instead, surface the
-      // "try Google" escape hatch directly in the dialog rather than
-      // dead-ending in a create-account loop the user can't get out of.
+      // silently detect which OAuth provider (if any) an account uses.
+      // Instead, surface both "try X instead" escape hatches directly in
+      // the dialog rather than dead-ending in a create-account loop.
       const ambiguousCodes = {'invalid-credential', 'user-not-found', 'wrong-password'};
       if (ambiguousCodes.contains(e.code)) {
         if (mounted) setState(() => _busy = false);
         final choice = await _resolveSignInFailure(email);
         if (choice == _SignInFailureChoice.useGoogle) {
           await _signInWithGoogle(auth);
+        } else if (choice == _SignInFailureChoice.useMicrosoft) {
+          await _signInWithMicrosoft(auth);
         } else if (choice == _SignInFailureChoice.createAccount) {
           await _run(() async {
             try {
@@ -128,7 +135,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
               if (e.code == 'email-already-in-use') {
                 throw FirebaseAuthException(
                   code: e.code,
-                  message: 'This email is already registered — most likely with Google. Use "Continue with Google" above instead.',
+                  message: 'This email is already registered — most likely with Google or Microsoft. Try one of those above instead.',
                 );
               }
               rethrow;
@@ -148,23 +155,32 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
   Future<_SignInFailureChoice?> _resolveSignInFailure(String email) {
     return showDialog<_SignInFailureChoice>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => SimpleDialog(
         title: const Text('Couldn\'t sign in'),
-        content: Text(
-          'Either the password is wrong, there\'s no account yet for $email, or this email is already registered through Google (which doesn\'t use a password here).',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              'Either the password is wrong, there\'s no account yet for $email, or this email is already registered through Google or Microsoft (which don\'t use a password here).',
+              style: AppTextStyles.bodySmall(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7)),
+            ),
           ),
-          TextButton(
+          const SizedBox(height: 12),
+          SimpleDialogOption(
             onPressed: () => Navigator.of(context).pop(_SignInFailureChoice.createAccount),
             child: const Text('Create account'),
           ),
-          TextButton(
+          SimpleDialogOption(
             onPressed: () => Navigator.of(context).pop(_SignInFailureChoice.useGoogle),
             child: const Text('Try Google instead', style: TextStyle(color: AppColors.primary)),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop(_SignInFailureChoice.useMicrosoft),
+            child: const Text('Try Microsoft instead', style: TextStyle(color: AppColors.primary)),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
           ),
         ],
       ),
@@ -228,7 +244,39 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
-                    : Text('Continue with Google', style: AppTextStyles.bodyLarge(color: Colors.white).copyWith(fontWeight: FontWeight.w700)),
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const GoogleIcon(size: 18),
+                          const SizedBox(width: 10),
+                          Text('Continue with Google', style: AppTextStyles.bodyLarge(color: Colors.white).copyWith(fontWeight: FontWeight.w700)),
+                        ],
+                      ),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton(
+                onPressed: _busy ? null : () => _signInWithMicrosoft(auth),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  side: BorderSide(color: theme.dividerColor),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadii.button)),
+                ),
+                child: _busy
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.onSurface),
+                      )
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const MicrosoftIcon(size: 18),
+                          const SizedBox(width: 10),
+                          Text('Continue with Microsoft', style: AppTextStyles.bodyLarge(color: theme.colorScheme.onSurface).copyWith(fontWeight: FontWeight.w700)),
+                        ],
+                      ),
               ),
               const SizedBox(height: 12),
               _EmailSection(
@@ -320,8 +368,12 @@ class _EmailSection extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  _fieldLabel(theme, 'EMAIL'),
+                  const SizedBox(height: 4),
                   _boxedField(theme, emailController, 'you@company.com', obscure: false),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
+                  _fieldLabel(theme, 'PASSWORD'),
+                  const SizedBox(height: 4),
                   _boxedField(theme, passwordController, 'Password', obscure: true),
                   const SizedBox(height: 8),
                   Row(
@@ -352,6 +404,13 @@ class _EmailSection extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _fieldLabel(ThemeData theme, String text) {
+    return Text(
+      text,
+      style: AppTextStyles.meta(color: theme.colorScheme.onSurface.withValues(alpha: 0.5)).copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.4),
     );
   }
 

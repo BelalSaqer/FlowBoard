@@ -10,6 +10,7 @@ import '../theme/app_text_styles.dart';
 import 'board_detail_screen.dart';
 import 'boards_list_screen.dart';
 import 'sign_in_screen.dart';
+import 'splash_screen.dart';
 
 /// Holds the resolved current-user [Member] once sign-in + profile
 /// resolution complete, so the rest of the app can read it synchronously
@@ -28,7 +29,7 @@ class AuthGate extends ConsumerWidget {
 
     return authState.when(
       data: (user) => user == null ? const SignInScreen() : const _ProfileGate(),
-      loading: () => const _Loading(),
+      loading: () => const SplashScreen(),
       error: (err, _) => _ErrorScreen(error: err, onRetry: () => ref.invalidate(authStateProvider)),
     );
   }
@@ -54,7 +55,7 @@ class _ProfileGate extends ConsumerWidget {
         });
         return const BoardsListScreen();
       },
-      loading: () => const _Loading(),
+      loading: () => const SplashScreen(),
       error: (err, _) => _ErrorScreen(error: err, onRetry: () => ref.invalidate(currentMemberProvider)),
     );
   }
@@ -73,16 +74,6 @@ class _ProfileGate extends ConsumerWidget {
         SnackBar(content: Text(e is StateError ? e.message : 'Couldn\'t open that invite link.')),
       );
     }
-  }
-}
-
-class _Loading extends StatelessWidget {
-  const _Loading();
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(child: CircularProgressIndicator(color: AppColors.primary)),
-    );
   }
 }
 

@@ -34,6 +34,64 @@
 </head>
 <body>
   <!--
+    Branded splash shown while flutter_bootstrap.js loads and the engine
+    boots — removed on the "flutter-first-frame" event Flutter dispatches
+    once the app has actually rendered, so there's no gap between this
+    and the in-app splash screen shown while auth state resolves.
+  -->
+  <style>
+    #splash {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      background: #FFFFFF;
+      z-index: 9999;
+    }
+    #splash img {
+      width: 72px;
+      height: 72px;
+      border-radius: 16px;
+    }
+    #splash .wordmark {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-weight: 800;
+      font-size: 22px;
+      letter-spacing: -0.3px;
+      color: #171527;
+    }
+    #splash .spinner {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      border: 3px solid rgba(91, 69, 224, 0.15);
+      border-top-color: #5B45E0;
+      animation: splash-spin 0.8s linear infinite;
+    }
+    @keyframes splash-spin {
+      to { transform: rotate(360deg); }
+    }
+    @media (prefers-color-scheme: dark) {
+      #splash { background: #0E0D14; }
+      #splash .wordmark { color: #F3F2F8; }
+    }
+  </style>
+  <div id="splash">
+    <img src="icons/Icon-192.png" alt="FlowBoard">
+    <div class="wordmark">FlowBoard</div>
+    <div class="spinner"></div>
+  </div>
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      var el = document.getElementById('splash');
+      if (el) el.remove();
+    });
+  </script>
+
+  <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader
     or to give the user feedback during the initialization process.

@@ -9,7 +9,10 @@ import 'package:flowboard/main.dart';
 import 'package:flowboard/providers/auth_provider.dart';
 import 'package:flowboard/providers/profile_provider.dart';
 import 'package:flowboard/screens/onboarding_screen.dart';
+import 'package:flowboard/screens/sign_in_screen.dart';
+import 'package:flowboard/screens/splash_screen.dart';
 import 'package:flowboard/widgets/empty_states.dart';
+import 'package:flowboard/widgets/flowboard_logo.dart';
 
 void main() {
   testWidgets('Boards list renders seeded boards', (WidgetTester tester) async {
@@ -61,5 +64,36 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(done, isTrue);
+  });
+
+  testWidgets('SplashScreen shows the brand mark and app name', (WidgetTester tester) async {
+    await tester.pumpWidget(const MaterialApp(home: SplashScreen()));
+
+    expect(find.byType(FlowBoardLogo), findsOneWidget);
+    expect(find.text('FlowBoard'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+  });
+
+  testWidgets('SignInScreen offers Google, Microsoft, email, and guest', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          firebaseAuthProvider.overrideWithValue(MockFirebaseAuth(signedIn: false)),
+        ],
+        child: const MaterialApp(home: SignInScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Continue with Google'), findsOneWidget);
+    expect(find.text('Continue with Microsoft'), findsOneWidget);
+    expect(find.text('Continue with Email'), findsOneWidget);
+    expect(find.text('Continue as Guest'), findsOneWidget);
+
+    // Expanding the email section should reveal the new field labels.
+    await tester.tap(find.text('Continue with Email'));
+    await tester.pumpAndSettle();
+    expect(find.text('EMAIL'), findsOneWidget);
+    expect(find.text('PASSWORD'), findsOneWidget);
   });
 }
