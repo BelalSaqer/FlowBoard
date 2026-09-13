@@ -20,13 +20,15 @@ teammate's presence pill appears from a live heartbeat.
   attachments, and a per-board activity log with a 7-day velocity chart
 - Comments with `@mention` notifications and lightweight markdown
   (`**bold**`, `*italic*`, `` `code` ``, `[links](url)`)
-- Multi-select bulk move/delete, and undoable task/board deletion
+- Multi-select bulk move/delete; task, bulk, and board deletion are all
+  undoable via the same deferred-delete-behind-a-snackbar pattern
 
 **Finding things**
 - **My Tasks** — everything assigned to you across every board you're in
 - Search plus priority, assignee, overdue, and due-soon filters, with
   named/saved filter combinations per board
-- CSV export and import (round-trips losslessly)
+- CSV export and import (round-trips losslessly; import flags ambiguous
+  or unmatched assignee names for review instead of guessing silently)
 - Keyboard shortcuts — `n` for a new task, `/` for search, `Esc` to close
   a sheet
 
@@ -87,7 +89,7 @@ flutter analyze
 flutter test
 ```
 
-56 provider/widget tests run against `fake_cloud_firestore` and
+69 provider/widget tests run against `fake_cloud_firestore` and
 `firebase_auth_mocks` — no live Firebase project needed. A separate
 Playwright suite in [`test/e2e/`](test/e2e/) checks things unit tests can't
 see (real OAuth popups, real deep links, real Firestore round trips)
@@ -141,6 +143,15 @@ firestore.rules  # full security model — see the project documentation
   whoever ran the import, since a spreadsheet can't carry a real member id.
 - Saved filters live in browser/device local storage, not Firestore — they
   don't follow you to a different device.
+- Drag-reorder uses a fractional index (`(a+b)/2` between neighbors);
+  enough repeated insertions at the *exact* same position between the
+  same two neighbors will eventually collide at double-precision limits.
+  Real usage doesn't hit this, so it's documented rather than defended
+  against with periodic rebalancing.
+- A task document with a `priority`/`column` value that doesn't match a
+  known enum name (a manual Firestore edit, a stale value from a future
+  app version) degrades to a sensible default instead of breaking
+  real-time sync for the whole board — logged, not surfaced in the UI.
 
 ## Documentation
 
