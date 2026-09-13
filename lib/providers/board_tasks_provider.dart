@@ -21,6 +21,21 @@ typedef BoardTasksState = Map<BoardColumnId, List<TaskCard>>;
 
 BoardTasksState _emptyState() => {for (final c in BoardColumnId.values) c: <TaskCard>[]};
 
+/// One row of a CSV import whose assignee couldn't be resolved cleanly —
+/// either no board member matched the name, or more than one did. See
+/// [BoardTasksNotifier._resolveImportAssignee].
+class ImportWarning {
+  final String taskTitle;
+  final String message;
+  const ImportWarning({required this.taskTitle, required this.message});
+}
+
+class BulkImportResult {
+  final int count;
+  final List<ImportWarning> warnings;
+  const BulkImportResult({required this.count, required this.warnings});
+}
+
 /// Holds the task cards for one board, grouped by column, streamed live
 /// from `boards/{boardId}/tasks`. Every mutation writes to Firestore and
 /// the resulting state update flows back through the same snapshot
@@ -237,24 +252,49 @@ class BoardTasksNotifier extends StateNotifier<BoardTasksState> {
     await batch.commit();
   }
 
+  /// Resolves one CSV row's "Assignee" cell against [boardMembers] by
+  /// exact case-insensitive name match. A blank cell is a deliberate
+  /// "no assignee specified" and falls back to [importer] silently, same
+  /// as leaving assignee unset in the New Task sheet — but a non-blank
+  /// name that doesn't resolve to exactly one member is a real ambiguity
+  /// a human should see, not something to paper over:
+  ///  - zero matches (typo, or someone not on this board) falls back to
+  ///    [importer] and returns a warning saying so;
+  ///  - more than one match (two members with the same display name —
+  ///    common enough with names like "Ahmed") assigns the first match
+  ///    and returns a warning naming the ambiguity, rather than silently
+  ///    picking one with no indication anything was uncertain.
+  (Member, String?) _resolveImportAssignee(String assigneeName, List<Member> boardMembers, Member importer) {
+    if (assigneeName.isEmpty) return (importer, null);
+    final matches = boardMembers.where((m) => m.name.toLowerCase() == assigneeName.toLowerCase()).toList();
+    if (matches.length == 1) return (matches.first, null);
+    if (matches.isEmpty) {
+      return (importer, 'No board member named "$assigneeName" — assigned to you instead.');
+    }
+    return (
+      matches.first,
+      '${matches.length} board members are named "$assigneeName" — assigned to the first one; double-check this is the right person.',
+    );
+  }
+
   /// Creates one task per parsed CSV row, appended to the end of its
-  /// target column. The "Assignee" column is matched by name against
-  /// [boardMembers] (case-insensitive) — a CSV can't carry a real member
-  /// id, so an unmatched or blank name just falls back to whoever ran the
-  /// import, same as leaving assignee unset in the New Task sheet.
-  Future<int> bulkImportTasks(List<ParsedCsvTask> rows, List<Member> boardMembers) async {
+  /// target column. See [_resolveImportAssignee] for how the "Assignee"
+  /// column is matched and when that produces a warning instead of a
+  /// silent fallback.
+  Future<BulkImportResult> bulkImportTasks(List<ParsedCsvTask> rows, List<Member> boardMembers) async {
     final me = currentMember();
     final columnEnds = <BoardColumnId, double>{
       for (final c in BoardColumnId.values)
         c: state[c]!.isEmpty ? 0.0 : _docsById[state[c]!.last.id]!.order,
     };
     final batch = db.batch();
+    final warnings = <ImportWarning>[];
     for (var i = 0; i < rows.length; i++) {
       final row = rows[i];
-      final assignee = boardMembers.firstWhere(
-        (m) => m.name.toLowerCase() == row.assigneeName.toLowerCase(),
-        orElse: () => me,
-      );
+      final (assignee, warning) = _resolveImportAssignee(row.assigneeName, boardMembers, me);
+      if (warning != null) {
+        warnings.add(ImportWarning(taskTitle: row.title, message: warning));
+      }
       columnEnds[row.column] = columnEnds[row.column]! + 1000.0;
       final activity = ActivityEntry(
         id: 'a-${DateTime.now().microsecondsSinceEpoch}-$i',
@@ -279,7 +319,7 @@ class BoardTasksNotifier extends StateNotifier<BoardTasksState> {
       });
     }
     await batch.commit();
-    return rows.length;
+    return BulkImportResult(count: rows.length, warnings: warnings);
   }
 
   static const _fallbackSuggestions = [

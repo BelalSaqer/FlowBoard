@@ -260,15 +260,56 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
       if (rows.isEmpty) {
         throw const FormatException('No task rows with a Title were found in that file.');
       }
-      final count = await ref.read(boardTasksProvider(board.id).notifier).bulkImportTasks(rows, board.members);
+      final result = await ref.read(boardTasksProvider(board.id).notifier).bulkImportTasks(rows, board.members);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Imported $count task${count == 1 ? '' : 's'}.')),
-      );
+      final count = result.count;
+      if (result.warnings.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Imported $count task${count == 1 ? '' : 's'}.')),
+        );
+      } else {
+        final warningCount = result.warnings.length;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Imported $count task${count == 1 ? '' : 's'} — $warningCount need${warningCount == 1 ? 's' : ''} review.'),
+            duration: const Duration(seconds: 8),
+            action: SnackBarAction(label: 'Review', onPressed: () => _showImportWarnings(result.warnings)),
+          ),
+        );
+      }
     } on FormatException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     }
+  }
+
+  void _showImportWarnings(List<ImportWarning> warnings) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${warnings.length} task${warnings.length == 1 ? '' : 's'} need review'),
+        content: SizedBox(
+          width: 340,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final w in warnings) ...[
+                  Text(w.taskTitle, style: AppTextStyles.bodySmall(color: AppColors.primary).copyWith(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 2),
+                  Text(w.message, style: AppTextStyles.bodySmall(color: AppColors.priorityHigh)),
+                  const SizedBox(height: 12),
+                ],
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK')),
+        ],
+      ),
+    );
   }
 
   void _openNewTask(BoardColumnId column) {

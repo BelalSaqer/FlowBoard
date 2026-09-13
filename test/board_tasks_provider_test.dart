@@ -209,7 +209,7 @@ void main() {
       expect(carolNotifs.docs, isEmpty);
     });
 
-    test('bulkImportTasks creates one task per row, matching assignee by name or falling back to the importer', () async {
+    test('bulkImportTasks assigns a single clean name match with no warning', () async {
       final db = FakeFirebaseFirestore();
       final notifier = _notifier(db, current: _alice);
       await _settle();
@@ -223,28 +223,100 @@ void main() {
           labels: ['Bug'],
           assigneeName: 'Bob',
         ),
+      ];
+
+      final result = await notifier.bulkImportTasks(rows, const [_alice, _bob]);
+      await _settle();
+
+      expect(result.count, 1);
+      expect(result.warnings, isEmpty);
+      final inProgress = notifier.state[BoardColumnId.inProgress]!;
+      expect(inProgress.map((t) => t.title), ['Imported for Bob']);
+      expect(inProgress.first.assignee.id, 'bob');
+      expect(inProgress.first.labels, ['Bug']);
+    });
+
+    test('bulkImportTasks leaves a blank assignee cell on the importer with no warning', () async {
+      final db = FakeFirebaseFirestore();
+      final notifier = _notifier(db, current: _alice);
+      await _settle();
+
+      final rows = [
         const ParsedCsvTask(
           title: 'Imported, unassigned',
           description: '',
           column: BoardColumnId.todo,
           priority: Priority.low,
           labels: [],
-          assigneeName: 'Nobody Here',
+          assigneeName: '',
         ),
       ];
 
-      final count = await notifier.bulkImportTasks(rows, const [_alice, _bob]);
+      final result = await notifier.bulkImportTasks(rows, const [_alice, _bob]);
       await _settle();
 
-      expect(count, 2);
-      final inProgress = notifier.state[BoardColumnId.inProgress]!;
-      expect(inProgress.map((t) => t.title), ['Imported for Bob']);
-      expect(inProgress.first.assignee.id, 'bob');
-      expect(inProgress.first.labels, ['Bug']);
-
+      expect(result.warnings, isEmpty);
       final todo = notifier.state[BoardColumnId.todo]!;
-      expect(todo.map((t) => t.title), ['Imported, unassigned']);
-      expect(todo.first.assignee.id, 'alice'); // no match -> falls back to importer
+      expect(todo.first.assignee.id, 'alice');
+    });
+
+    test('bulkImportTasks warns and falls back to the importer for a misspelled/unmatched assignee name', () async {
+      final db = FakeFirebaseFirestore();
+      final notifier = _notifier(db, current: _alice);
+      await _settle();
+
+      final rows = [
+        const ParsedCsvTask(
+          title: 'Typo assignee',
+          description: '',
+          column: BoardColumnId.todo,
+          priority: Priority.low,
+          labels: [],
+          assigneeName: 'Bobb', // misspelled — no board member matches
+        ),
+      ];
+
+      final result = await notifier.bulkImportTasks(rows, const [_alice, _bob]);
+      await _settle();
+
+      expect(result.count, 1);
+      expect(result.warnings, hasLength(1));
+      expect(result.warnings.single.taskTitle, 'Typo assignee');
+      expect(result.warnings.single.message, contains('No board member named "Bobb"'));
+      final todo = notifier.state[BoardColumnId.todo]!;
+      expect(todo.first.assignee.id, 'alice'); // silently reassigning would be the bug
+    });
+
+    test('bulkImportTasks warns and picks the first match when two board members share a name', () async {
+      final db = FakeFirebaseFirestore();
+      final notifier = _notifier(db, current: _alice);
+      await _settle();
+
+      const ahmed1 = Member(id: 'ahmed1', name: 'Ahmed', initials: 'AH', color: AppColors.priorityLow);
+      const ahmed2 = Member(id: 'ahmed2', name: 'Ahmed', initials: 'AH', color: AppColors.priorityMedium);
+
+      final rows = [
+        const ParsedCsvTask(
+          title: 'Ambiguous assignee',
+          description: '',
+          column: BoardColumnId.todo,
+          priority: Priority.low,
+          labels: [],
+          assigneeName: 'Ahmed',
+        ),
+      ];
+
+      final result = await notifier.bulkImportTasks(rows, const [_alice, ahmed1, ahmed2]);
+      await _settle();
+
+      expect(result.count, 1);
+      expect(result.warnings, hasLength(1));
+      expect(result.warnings.single.taskTitle, 'Ambiguous assignee');
+      expect(result.warnings.single.message, contains('2 board members are named "Ahmed"'));
+      final todo = notifier.state[BoardColumnId.todo]!;
+      // Assigned to *a* match, not silently defaulted to the importer —
+      // and the warning is what actually flags the ambiguity to a human.
+      expect(todo.first.assignee.id, 'ahmed1');
     });
 
     test('addAttachment appends and removeAttachment removes by value', () async {
