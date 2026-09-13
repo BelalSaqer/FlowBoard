@@ -323,7 +323,12 @@ class _PriorityPill extends StatelessWidget {
         ),
         child: Text(
           priority.label,
-          style: AppTextStyles.bodySmall(color: active ? Colors.white : theme.colorScheme.onSurface).copyWith(fontWeight: FontWeight.w700),
+          // `colors.accent` is tuned as a small-scale rule/dot color, not a
+          // solid fill for white text — measured against WCAG, white text
+          // on it lands as low as ~1.8:1 (needs 4.5:1). A dark, near-black
+          // label instead clears 6:1+ against every priority's accent, in
+          // both themes.
+          style: AppTextStyles.bodySmall(color: active ? AppColors.textPrimaryLight : theme.colorScheme.onSurface).copyWith(fontWeight: FontWeight.w700),
         ),
       ),
     );

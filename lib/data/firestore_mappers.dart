@@ -148,6 +148,9 @@ TaskDoc taskDocFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     labels: [
       for (final l in (data['labels'] as List<dynamic>? ?? [])) l as String,
     ],
+    attachments: [
+      for (final a in (data['attachments'] as List<dynamic>? ?? [])) a as String,
+    ],
   );
   return TaskDoc(
     task: task,
@@ -171,6 +174,7 @@ Map<String, dynamic> taskToSeedMap(TaskCard t, double order) => {
   'comments': [for (final c in t.comments) commentToMap(c)],
   'activity': [for (final a in t.activity) activityToMap(a)],
   'labels': t.labels,
+  'attachments': t.attachments,
   'updatedAt': FieldValue.serverTimestamp(),
   'updatedBy': null,
 };

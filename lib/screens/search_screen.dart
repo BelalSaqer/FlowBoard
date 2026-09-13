@@ -10,6 +10,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_metrics.dart';
 import '../theme/app_text_styles.dart';
 import '../theme/priority_colors.dart';
+import '../widgets/app_back_button.dart';
 import 'task_detail_sheet.dart';
 
 /// Real (not decorative) search + filter over a board's tasks: text
@@ -73,7 +74,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               padding: const EdgeInsets.fromLTRB(18, 8, 18, 10),
               child: Row(
                 children: [
-                  _BackButton(onTap: () => Navigator.of(context).maybePop()),
+                  AppBackButton(onTap: () => Navigator.of(context).maybePop()),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -368,7 +369,10 @@ class _PriorityChip extends StatelessWidget {
         ),
         child: Text(
           priority.label,
-          style: AppTextStyles.bodySmall(color: selected ? Colors.white : theme.colorScheme.onSurface.withValues(alpha: 0.6)).copyWith(fontWeight: FontWeight.w700),
+          // See new_task_sheet.dart's _PriorityPill: white text on
+          // colors.accent measures well under WCAG's 4.5:1 for small text
+          // across every priority/theme combination — dark text clears it.
+          style: AppTextStyles.bodySmall(color: selected ? AppColors.textPrimaryLight : theme.colorScheme.onSurface.withValues(alpha: 0.6)).copyWith(fontWeight: FontWeight.w700),
         ),
       ),
     );
@@ -492,30 +496,6 @@ class _HitCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _BackButton extends StatelessWidget {
-  final VoidCallback onTap;
-  const _BackButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(11),
-      child: Container(
-        width: 34,
-        height: 34,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          border: Border.all(color: theme.dividerColor),
-          borderRadius: BorderRadius.circular(11),
-        ),
-        child: Icon(Icons.arrow_back_ios_new, size: 14, color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
       ),
     );
   }

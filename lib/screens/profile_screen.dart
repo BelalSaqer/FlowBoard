@@ -11,6 +11,7 @@ import '../providers/theme_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_metrics.dart';
 import '../theme/app_text_styles.dart';
+import '../widgets/app_back_button.dart';
 import '../widgets/member_avatar.dart';
 import 'auth_gate.dart';
 
@@ -292,12 +293,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     children: [
                       Row(
                         children: [
-                          _BackButton(onTap: () => Navigator.of(context).maybePop()),
+                          AppBackButton(onTap: () => Navigator.of(context).maybePop()),
                           const SizedBox(width: 12),
                           Text('Profile', style: AppTextStyles.h2(color: theme.colorScheme.onSurface)),
                           const Spacer(),
                           IconButton(
                             onPressed: () => _avatarOptionsMenu(me.id, me.color, hasPhoto),
+                            tooltip: 'Avatar options',
                             icon: Icon(Icons.more_horiz, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
                           ),
                         ],
@@ -310,17 +312,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             Positioned(
                               right: 0,
                               bottom: 0,
-                              child: InkWell(
-                                onTap: () => _uploadPhoto(me.id),
-                                borderRadius: BorderRadius.circular(999),
-                                child: Container(
-                                  padding: const EdgeInsets.all(7),
-                                  decoration: BoxDecoration(
-                                    color: theme.scaffoldBackgroundColor,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: AppColors.primary, width: 1.4),
+                              child: Tooltip(
+                                message: 'Upload photo',
+                                child: InkWell(
+                                  onTap: () => _uploadPhoto(me.id),
+                                  borderRadius: BorderRadius.circular(999),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(7),
+                                    decoration: BoxDecoration(
+                                      color: theme.scaffoldBackgroundColor,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: AppColors.primary, width: 1.4),
+                                    ),
+                                    child: const Icon(Icons.camera_alt_outlined, size: 16, color: AppColors.primary),
                                   ),
-                                  child: const Icon(Icons.camera_alt_outlined, size: 16, color: AppColors.primary),
                                 ),
                               ),
                             ),
@@ -502,30 +507,6 @@ class _ThemeSelector extends StatelessWidget {
               ),
             ),
         ],
-      ),
-    );
-  }
-}
-
-class _BackButton extends StatelessWidget {
-  final VoidCallback onTap;
-  const _BackButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(11),
-      child: Container(
-        width: 34,
-        height: 34,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          border: Border.all(color: theme.dividerColor),
-          borderRadius: BorderRadius.circular(11),
-        ),
-        child: Icon(Icons.arrow_back_ios_new, size: 14, color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
       ),
     );
   }

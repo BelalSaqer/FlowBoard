@@ -54,4 +54,45 @@ void main() {
     });
     expect(csv.split('\r\n'), hasLength(1));
   });
+
+  test('parseBoardCsv round-trips a CSV produced by buildBoardCsv', () {
+    final tasks = {
+      BoardColumnId.todo: [
+        const TaskCard(
+          id: 't1',
+          title: 'Fix, the bug',
+          description: 'desc',
+          priority: Priority.high,
+          assignee: _alice,
+          column: BoardColumnId.todo,
+          labels: ['Bug', 'Urgent'],
+        ),
+      ],
+      BoardColumnId.inProgress: const <TaskCard>[],
+      BoardColumnId.done: const <TaskCard>[],
+    };
+    final csv = buildBoardCsv(_board(), tasks);
+
+    final parsed = parseBoardCsv(csv);
+
+    expect(parsed, hasLength(1));
+    expect(parsed.first.title, 'Fix, the bug');
+    expect(parsed.first.column, BoardColumnId.todo);
+    expect(parsed.first.priority, Priority.high);
+    expect(parsed.first.labels, ['Bug', 'Urgent']);
+    expect(parsed.first.assigneeName, 'Alice');
+  });
+
+  test('parseBoardCsv skips rows with no title and defaults missing columns', () {
+    final csv = '"Title","Priority"\r\n"","High"\r\n"Just a title",""';
+    final parsed = parseBoardCsv(csv);
+    expect(parsed, hasLength(1));
+    expect(parsed.first.title, 'Just a title');
+    expect(parsed.first.priority, Priority.medium);
+    expect(parsed.first.column, BoardColumnId.todo);
+  });
+
+  test('parseBoardCsv throws a clear error when there is no Title column', () {
+    expect(() => parseBoardCsv('"Name","Notes"\r\n"a","b"'), throwsFormatException);
+  });
 }

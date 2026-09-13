@@ -17,6 +17,7 @@ class TaskCard {
   final List<TaskComment> comments;
   final List<ActivityEntry> activity;
   final List<String> labels;
+  final List<String> attachments;
 
   const TaskCard({
     required this.id,
@@ -30,6 +31,7 @@ class TaskCard {
     this.comments = const [],
     this.activity = const [],
     this.labels = const [],
+    this.attachments = const [],
   });
 
   bool get isOverdue =>
@@ -52,6 +54,7 @@ class TaskCard {
     List<TaskComment>? comments,
     List<ActivityEntry>? activity,
     List<String>? labels,
+    List<String>? attachments,
   }) {
     return TaskCard(
       id: id,
@@ -65,6 +68,7 @@ class TaskCard {
       comments: comments ?? this.comments,
       activity: activity ?? this.activity,
       labels: labels ?? this.labels,
+      attachments: attachments ?? this.attachments,
     );
   }
 }

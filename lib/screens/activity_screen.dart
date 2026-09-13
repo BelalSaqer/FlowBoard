@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/activity_entry.dart';
 import '../models/board.dart';
 import '../providers/board_tasks_provider.dart';
+import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
+import '../widgets/app_back_button.dart';
 
 class _ActivityRow {
   final ActivityEntry entry;
@@ -45,7 +47,7 @@ class ActivityScreen extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
               child: Row(
                 children: [
-                  _BackButton(onTap: () => Navigator.of(context).maybePop()),
+                  AppBackButton(onTap: () => Navigator.of(context).maybePop()),
                   const SizedBox(width: 12),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -60,6 +62,11 @@ class ActivityScreen extends ConsumerWidget {
                 ],
               ),
             ),
+            if (rows.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
+                child: _VelocityChart(rows: rows),
+              ),
             Expanded(
               child: rows.isEmpty
                   ? Center(
@@ -112,6 +119,104 @@ class ActivityScreen extends ConsumerWidget {
     if (diff == 1) return 'Yesterday';
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return '${months[time.month - 1]} ${time.day}';
+  }
+}
+
+/// A 7-day "cards completed per day" bar chart, derived entirely from
+/// existing activity-log text — no separate history table needed, since
+/// every move-to-Done already leaves a timestamped entry behind. Hand-
+/// rolled from plain Containers (no charting package) to match the
+/// vector-only, no-image-assets style used elsewhere (see
+/// _BoardStackIllustration in empty_states.dart).
+class _VelocityChart extends StatelessWidget {
+  final List<_ActivityRow> rows;
+  const _VelocityChart({required this.rows});
+
+  static const _barHeight = 56.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final days = [for (var i = 6; i >= 0; i--) today.subtract(Duration(days: i))];
+
+    final counts = {for (final d in days) d: 0};
+    for (final row in rows) {
+      if (!row.entry.text.endsWith('to Done')) continue;
+      final d = DateTime(row.entry.time.year, row.entry.time.month, row.entry.time.day);
+      if (counts.containsKey(d)) counts[d] = counts[d]! + 1;
+    }
+    final total = counts.values.fold(0, (a, b) => a + b);
+    final maxCount = counts.values.fold(0, (a, b) => a > b ? a : b);
+
+    const weekdayInitials = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border.all(color: theme.dividerColor),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'VELOCITY',
+                style: AppTextStyles.meta(color: theme.colorScheme.onSurface.withValues(alpha: 0.5)).copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.4),
+              ),
+              const Spacer(),
+              Text(
+                '$total completed this week',
+                style: AppTextStyles.metaSmall(color: theme.colorScheme.onSurface.withValues(alpha: 0.55)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: _barHeight,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                for (final d in days)
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: Tooltip(
+                        message: '${counts[d]} completed on ${d.month}/${d.day}',
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          height: maxCount == 0 ? 4 : 4 + (_barHeight - 4) * (counts[d]! / maxCount),
+                          decoration: BoxDecoration(
+                            color: d == today ? AppColors.primary : AppColors.primary.withValues(alpha: 0.35),
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              for (var i = 0; i < days.length; i++)
+                Expanded(
+                  child: Text(
+                    weekdayInitials[days[i].weekday - 1],
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.metaTiny(color: theme.colorScheme.onSurface.withValues(alpha: 0.45)),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -173,30 +278,6 @@ class _RichActivityText extends StatelessWidget {
           TextSpan(text: "'${match.group(2)}'", style: const TextStyle(fontWeight: FontWeight.w700)),
           TextSpan(text: match.group(3)),
         ],
-      ),
-    );
-  }
-}
-
-class _BackButton extends StatelessWidget {
-  final VoidCallback onTap;
-  const _BackButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(11),
-      child: Container(
-        width: 34,
-        height: 34,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          border: Border.all(color: theme.dividerColor),
-          borderRadius: BorderRadius.circular(11),
-        ),
-        child: Icon(Icons.arrow_back_ios_new, size: 14, color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
       ),
     );
   }

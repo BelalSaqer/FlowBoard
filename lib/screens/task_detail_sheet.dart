@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image/image.dart' as img;
+import 'package:image_picker/image_picker.dart';
 import '../models/conflict_info.dart';
 import '../models/task_card.dart';
 import '../providers/board_tasks_provider.dart';
@@ -12,6 +15,8 @@ import '../theme/label_colors.dart';
 import '../widgets/member_avatar.dart';
 import '../widgets/priority_tag.dart';
 import 'auth_gate.dart';
+
+const _maxAttachmentBytes = 120 * 1024;
 
 class TaskDetailSheet extends ConsumerStatefulWidget {
   final String boardId;
@@ -36,6 +41,106 @@ class _TaskDetailSheetState extends ConsumerState<TaskDetailSheet> {
   void dispose() {
     _commentController.dispose();
     super.dispose();
+  }
+
+  // Direct-tap, no intermediate dialog — same browser-gesture requirement
+  // as the profile photo picker: `pickImage()` has to fire with no
+  // `await` gap from the tap or the native file dialog silently no-ops.
+  Future<void> _addAttachment(TaskCard task) async {
+    if (task.attachments.length >= BoardTasksNotifier.maxAttachments) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Up to ${BoardTasksNotifier.maxAttachments} attachments per task.')),
+      );
+      return;
+    }
+    XFile? file;
+    try {
+      file = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1024, maxHeight: 1024);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not open the photo picker: $e')));
+      }
+      return;
+    }
+    if (file == null || !mounted) return;
+
+    final bytes = await file.readAsBytes();
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('That file could not be read as an image.')),
+        );
+      }
+      return;
+    }
+
+    final longestSide = decoded.width > decoded.height ? decoded.width : decoded.height;
+    final resized = longestSide > 256
+        ? img.copyResize(
+            decoded,
+            width: decoded.width >= decoded.height ? 256 : null,
+            height: decoded.height > decoded.width ? 256 : null,
+          )
+        : decoded;
+
+    var quality = 80;
+    var jpg = img.encodeJpg(resized, quality: quality);
+    while (jpg.length > _maxAttachmentBytes && quality > 20) {
+      quality -= 15;
+      jpg = img.encodeJpg(resized, quality: quality);
+    }
+    if (jpg.length > _maxAttachmentBytes) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('That image is too large even after compression — try a different one.')),
+        );
+      }
+      return;
+    }
+
+    await ref.read(boardTasksProvider(widget.boardId).notifier).addAttachment(task.id, base64Encode(jpg));
+  }
+
+  void _viewAttachment(String base64Image, bool canEdit, TaskCard task) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Stack(
+          alignment: Alignment.topRight,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.memory(base64Decode(base64Image), fit: BoxFit.contain),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Row(
+                children: [
+                  if (canEdit)
+                    IconButton(
+                      tooltip: 'Remove attachment',
+                      style: IconButton.styleFrom(backgroundColor: Colors.black54),
+                      icon: const Icon(Icons.delete_outline, color: Colors.white, size: 18),
+                      onPressed: () {
+                        ref.read(boardTasksProvider(widget.boardId).notifier).removeAttachment(task.id, base64Image);
+                        Navigator.of(context).pop();
+                      },
+                    ),
+                  IconButton(
+                    tooltip: 'Close',
+                    style: IconButton.styleFrom(backgroundColor: Colors.black54),
+                    icon: const Icon(Icons.close, color: Colors.white, size: 18),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _runAi() async {
@@ -146,11 +251,14 @@ class _TaskDetailSheetState extends ConsumerState<TaskDetailSheet> {
                         ),
                         const Spacer(),
                         if (canEdit)
-                          GestureDetector(
-                            onTap: _delete,
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: Icon(Icons.delete_outline, size: 18, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+                          Tooltip(
+                            message: 'Delete task',
+                            child: GestureDetector(
+                              onTap: _delete,
+                              child: Padding(
+                                padding: const EdgeInsets.all(4),
+                                child: Icon(Icons.delete_outline, size: 18, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+                              ),
                             ),
                           ),
                         GestureDetector(
@@ -243,6 +351,13 @@ class _TaskDetailSheetState extends ConsumerState<TaskDetailSheet> {
                       style: AppTextStyles.bodyLarge(
                         color: theme.colorScheme.onSurface.withValues(alpha: task.description.isEmpty ? 0.5 : 1),
                       ).copyWith(height: 1.6),
+                    ),
+                    const SizedBox(height: 14),
+                    _AttachmentsRow(
+                      task: task,
+                      canEdit: canEdit,
+                      onAdd: () => _addAttachment(task),
+                      onView: (b64) => _viewAttachment(b64, canEdit, task),
                     ),
                     if (_aiLoading) ...[
                       const SizedBox(height: 14),
@@ -366,6 +481,52 @@ class _LabelToggle extends StatelessWidget {
           ).copyWith(fontWeight: FontWeight.w700, fontSize: 12),
         ),
       ),
+    );
+  }
+}
+
+class _AttachmentsRow extends StatelessWidget {
+  final TaskCard task;
+  final bool canEdit;
+  final VoidCallback onAdd;
+  final void Function(String base64Image) onView;
+  const _AttachmentsRow({required this.task, required this.canEdit, required this.onAdd, required this.onView});
+
+  @override
+  Widget build(BuildContext context) {
+    if (task.attachments.isEmpty && !canEdit) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final a in task.attachments)
+          InkWell(
+            onTap: () => onView(a),
+            borderRadius: BorderRadius.circular(10),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.memory(base64Decode(a), width: 56, height: 56, fit: BoxFit.cover),
+            ),
+          ),
+        if (canEdit && task.attachments.length < BoardTasksNotifier.maxAttachments)
+          Tooltip(
+            message: 'Add attachment',
+            child: InkWell(
+              onTap: onAdd,
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  border: Border.all(color: theme.dividerColor),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.add_photo_alternate_outlined, size: 20, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

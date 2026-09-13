@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../data/csv_export.dart';
 import '../data/firestore_mappers.dart';
 import '../models/activity_entry.dart';
 import '../models/board_column.dart';
@@ -179,6 +180,26 @@ class BoardTasksNotifier extends StateNotifier<BoardTasksState> {
     }
   }
 
+  static const maxAttachments = 3;
+
+  Future<void> addAttachment(String taskId, String base64Image) async {
+    final me = currentMember();
+    await _tasksCol.doc(taskId).update({
+      'attachments': FieldValue.arrayUnion([base64Image]),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': memberToMap(me),
+    });
+  }
+
+  Future<void> removeAttachment(String taskId, String base64Image) async {
+    final me = currentMember();
+    await _tasksCol.doc(taskId).update({
+      'attachments': FieldValue.arrayRemove([base64Image]),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': memberToMap(me),
+    });
+  }
+
   Future<void> setLabels(String taskId, List<String> labels) async {
     final me = currentMember();
     await _tasksCol.doc(taskId).update({
@@ -214,6 +235,51 @@ class BoardTasksNotifier extends StateNotifier<BoardTasksState> {
       batch.delete(_tasksCol.doc(id));
     }
     await batch.commit();
+  }
+
+  /// Creates one task per parsed CSV row, appended to the end of its
+  /// target column. The "Assignee" column is matched by name against
+  /// [boardMembers] (case-insensitive) — a CSV can't carry a real member
+  /// id, so an unmatched or blank name just falls back to whoever ran the
+  /// import, same as leaving assignee unset in the New Task sheet.
+  Future<int> bulkImportTasks(List<ParsedCsvTask> rows, List<Member> boardMembers) async {
+    final me = currentMember();
+    final columnEnds = <BoardColumnId, double>{
+      for (final c in BoardColumnId.values)
+        c: state[c]!.isEmpty ? 0.0 : _docsById[state[c]!.last.id]!.order,
+    };
+    final batch = db.batch();
+    for (var i = 0; i < rows.length; i++) {
+      final row = rows[i];
+      final assignee = boardMembers.firstWhere(
+        (m) => m.name.toLowerCase() == row.assigneeName.toLowerCase(),
+        orElse: () => me,
+      );
+      columnEnds[row.column] = columnEnds[row.column]! + 1000.0;
+      final activity = ActivityEntry(
+        id: 'a-${DateTime.now().microsecondsSinceEpoch}-$i',
+        text: '${me.name} imported this card',
+        time: DateTime.now(),
+        dotColor: AppColors.primary,
+      );
+      batch.set(_tasksCol.doc(), {
+        'title': row.title,
+        'description': row.description,
+        'priority': row.priority.name,
+        'assignee': memberToMap(assignee),
+        'dueDate': null,
+        'column': row.column.name,
+        'order': columnEnds[row.column],
+        'subtasks': <Map<String, dynamic>>[],
+        'comments': <Map<String, dynamic>>[],
+        'activity': [activityToMap(activity)],
+        'labels': row.labels,
+        'updatedAt': FieldValue.serverTimestamp(),
+        'updatedBy': memberToMap(me),
+      });
+    }
+    await batch.commit();
+    return rows.length;
   }
 
   static const _fallbackSuggestions = [

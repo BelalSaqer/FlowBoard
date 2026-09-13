@@ -379,21 +379,24 @@ class _AddTaskButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          border: Border.all(color: theme.dividerColor),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          '+ Add task',
-          style: AppTextStyles.bodySmall(
-            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-          ).copyWith(fontWeight: FontWeight.w600),
+    return Tooltip(
+      message: 'Add a task to this column (n)',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            border: Border.all(color: theme.dividerColor),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            '+ Add task',
+            style: AppTextStyles.bodySmall(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+            ).copyWith(fontWeight: FontWeight.w600),
+          ),
         ),
       ),
     );

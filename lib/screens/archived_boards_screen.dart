@@ -4,6 +4,7 @@ import '../models/board.dart';
 import '../providers/boards_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
+import '../widgets/app_back_button.dart';
 import 'auth_gate.dart';
 
 /// Lists boards the current user belongs to that have been archived, with
@@ -47,7 +48,7 @@ class _ArchivedBoardsScreenState extends ConsumerState<ArchivedBoardsScreen> {
             children: [
               Row(
                 children: [
-                  _BackButton(onTap: () => Navigator.of(context).maybePop()),
+                  AppBackButton(onTap: () => Navigator.of(context).maybePop()),
                   const SizedBox(width: 12),
                   Text('Archived boards', style: AppTextStyles.h2(color: theme.colorScheme.onSurface)),
                 ],
@@ -103,30 +104,6 @@ class _ArchivedBoardsScreenState extends ConsumerState<ArchivedBoardsScreen> {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _BackButton extends StatelessWidget {
-  final VoidCallback onTap;
-  const _BackButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(11),
-      child: Container(
-        width: 34,
-        height: 34,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          border: Border.all(color: theme.dividerColor),
-          borderRadius: BorderRadius.circular(11),
-        ),
-        child: Icon(Icons.arrow_back_ios_new, size: 14, color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
       ),
     );
   }

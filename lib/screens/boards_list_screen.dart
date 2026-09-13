@@ -38,16 +38,19 @@ class BoardsListScreen extends ConsumerWidget {
                 ),
                 Consumer(
                   builder: (context, ref, _) {
-                    return InkWell(
-                      onTap: () => _showCreateBoardDialog(context, ref),
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        margin: const EdgeInsets.only(right: 8),
-                        decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(12)),
-                        alignment: Alignment.center,
-                        child: const Icon(Icons.add, color: Colors.white),
+                    return Tooltip(
+                      message: 'New board',
+                      child: InkWell(
+                        onTap: () => _showCreateBoardDialog(context, ref),
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(12)),
+                          alignment: Alignment.center,
+                          child: const Icon(Icons.add, color: Colors.white),
+                        ),
                       ),
                     );
                   },
@@ -55,7 +58,9 @@ class BoardsListScreen extends ConsumerWidget {
                 Consumer(
                   builder: (context, ref, _) {
                     final unread = ref.watch(unreadNotificationCountProvider);
-                    return InkWell(
+                    return Tooltip(
+                      message: unread > 0 ? 'Notifications ($unread unread)' : 'Notifications',
+                      child: InkWell(
                       borderRadius: BorderRadius.circular(999),
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => const NotificationsScreen()),
@@ -97,6 +102,7 @@ class BoardsListScreen extends ConsumerWidget {
                           ],
                         ),
                       ),
+                      ),
                     );
                   },
                 ),
@@ -104,12 +110,15 @@ class BoardsListScreen extends ConsumerWidget {
                   builder: (context, ref, _) {
                     final me = ref.watch(currentMemberStateProvider);
                     if (me == null) return const SizedBox.shrink();
-                    return InkWell(
-                      borderRadius: BorderRadius.circular(999),
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                    return Tooltip(
+                      message: 'Your profile',
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(999),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                        ),
+                        child: MemberAvatar(member: me, size: 36),
                       ),
-                      child: MemberAvatar(member: me, size: 36),
                     );
                   },
                 ),

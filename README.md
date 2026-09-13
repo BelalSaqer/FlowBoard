@@ -13,10 +13,14 @@ concurrent writes; a teammate's presence pill appears from a live heartbeat.
 - **Boards & tasks** — create/rename/recolor/archive boards, drag-and-drop
   cards across To Do / In Progress / Done with fractional-index ordering,
   task labels, due dates with overdue/due-soon indicators, subtasks,
-  comments with `@mention` notifications, and a per-board activity log
+  comments with `@mention` notifications, small image attachments, and a
+  per-board activity log with a 7-day velocity chart
 - **Bulk actions** — multi-select mode to move or delete several tasks at
   once
-- **CSV export** — download any board's tasks as a spreadsheet
+- **CSV export & import** — download any board's tasks as a spreadsheet, or
+  bulk-create tasks from one
+- **Keyboard shortcuts** — `n` for a new task, `/` for search, `Esc` to
+  close a sheet
 - **Real-time collaboration** — live presence, and conflict detection that
   flags when someone else edited a card while you had it open
 - **AI-assisted subtasks** — breaks a task into a checklist via the Gemini
@@ -32,6 +36,11 @@ concurrent writes; a teammate's presence pill appears from a live heartbeat.
 - **Search & filters** — text search plus priority, assignee, overdue, and
   due-soon filters
 - **Notifications, light/dark/system theme, branded splash screen**
+- **Installable PWA** — a filled-in manifest, real icons, and a registered
+  service worker mean the live app is installable from the browser
+- **Accessibility** — icon-only buttons carry real tooltip/semantic labels
+  (not just bare icons), and priority-tag color pairs are checked against
+  WCAG AA contrast rather than assumed
 
 ## Tech stack
 
@@ -66,7 +75,7 @@ flutter analyze
 flutter test
 ```
 
-29+ provider/widget tests run against `fake_cloud_firestore` and
+45+ provider/widget tests run against `fake_cloud_firestore` and
 `firebase_auth_mocks` — no live Firebase project needed. A separate
 Playwright suite in [`test/e2e/`](test/e2e/) checks things unit tests can't
 see (real OAuth popups, real deep links, real Firestore round trips)
@@ -111,8 +120,12 @@ firestore.rules  # full security model — see the project documentation
 - **Gemini API key** is scoped by API restriction, not by HTTP referrer —
   current Gemini key types don't support referrer restriction. A backend
   proxy would close this gap but requires paid Cloud Functions.
-- Avatar photos are capped at ~180 KB (stored inline on the user doc to
-  avoid a paid storage backend).
+- Avatar photos are capped at ~180 KB, task attachments at ~120 KB each
+  (max 3 per task) — both stored inline on their document to avoid a paid
+  storage backend.
+- CSV import matches the "Assignee" column by exact display name against
+  the board's current members; no match (or a blank cell) falls back to
+  whoever ran the import, since a spreadsheet can't carry a real member id.
 
 ## Documentation
 

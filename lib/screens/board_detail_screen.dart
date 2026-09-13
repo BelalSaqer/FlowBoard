@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/csv_export.dart';
 import '../models/board.dart';
@@ -9,8 +10,10 @@ import '../providers/board_tasks_provider.dart';
 import '../providers/boards_provider.dart';
 import '../providers/profile_provider.dart';
 import '../services/file_export.dart';
+import '../services/file_import.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
+import '../widgets/app_back_button.dart';
 import '../widgets/board_column_view.dart';
 import '../widgets/empty_states.dart';
 import '../widgets/new_task_sheet.dart';
@@ -46,6 +49,36 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
   bool _selectionMode = false;
   final Set<String> _selectedIds = {};
 
+  bool _isTypingSomewhere() {
+    final focused = FocusManager.instance.primaryFocus;
+    return focused != null && focused.context?.widget is EditableText;
+  }
+
+  // Registered on HardwareKeyboard directly (not a Shortcuts/Focus
+  // widget) so 'n'/'/' work regardless of which widget currently holds
+  // focus — the _isTypingSomewhere() guard is what actually keeps this
+  // from hijacking keystrokes while a text field is focused, since that
+  // doesn't happen automatically this way.
+  bool _handleKeyEvent(KeyEvent event) {
+    if (event is! KeyDownEvent || !mounted || _isTypingSomewhere()) return false;
+    if (event.logicalKey == LogicalKeyboardKey.keyN) {
+      final isViewer = () {
+        final myId = ref.read(currentMemberStateProvider)?.id;
+        final board = ref.read(boardsProvider).firstWhere((b) => b.id == widget.board.id, orElse: () => widget.board);
+        return myId != null && board.roleOf(myId) == 'viewer';
+      }();
+      if (!isViewer) {
+        _openNewTask(_columns[_activeColumn]);
+        return true;
+      }
+    } else if (event.logicalKey == LogicalKeyboardKey.slash) {
+      final board = ref.read(boardsProvider).firstWhere((b) => b.id == widget.board.id, orElse: () => widget.board);
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => SearchScreen(board: board)));
+      return true;
+    }
+    return false;
+  }
+
   static const _columns = BoardColumnId.values;
 
   PresenceHeartbeat? _heartbeat;
@@ -61,10 +94,12 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
         member: me,
       )..start();
     }
+    HardwareKeyboard.instance.addHandler(_handleKeyEvent);
   }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
     _heartbeat?.stop();
     _autoScrollTimer?.cancel();
     _scrollController.dispose();
@@ -214,6 +249,28 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
     );
   }
 
+  Future<void> _importCsv(Board board) async {
+    // Fires with no `await` before it, same gesture-timing requirement as
+    // the avatar photo picker — pickTextFile's own first statement is the
+    // browser file-dialog call.
+    final text = await pickTextFile(accept: '.csv,text/csv');
+    if (text == null || !mounted) return;
+    try {
+      final rows = parseBoardCsv(text);
+      if (rows.isEmpty) {
+        throw const FormatException('No task rows with a Title were found in that file.');
+      }
+      final count = await ref.read(boardTasksProvider(board.id).notifier).bulkImportTasks(rows, board.members);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Imported $count task${count == 1 ? '' : 's'}.')),
+      );
+    } on FormatException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   void _openNewTask(BoardColumnId column) {
     final me = ref.read(currentMemberStateProvider);
     if (me == null) return;
@@ -261,7 +318,7 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
                 children: [
                   Row(
                     children: [
-                      _BackButton(onTap: () => Navigator.of(context).maybePop()),
+                      AppBackButton(onTap: () => Navigator.of(context).maybePop()),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -329,6 +386,8 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
                             );
                           } else if (value == 'export') {
                             _exportCsv(board);
+                          } else if (value == 'import') {
+                            _importCsv(board);
                           }
                         },
                       ),
@@ -428,21 +487,24 @@ class _SelectModeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(11),
-      child: Container(
-        width: 34,
-        height: 34,
-        decoration: BoxDecoration(
-          color: active ? AppColors.primary : theme.colorScheme.surface,
-          border: Border.all(color: active ? AppColors.primary : theme.dividerColor),
-          borderRadius: BorderRadius.circular(11),
-        ),
-        child: Icon(
-          Icons.checklist,
-          size: 18,
-          color: active ? Colors.white : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+    return Tooltip(
+      message: active ? 'Exit selection mode' : 'Select multiple tasks',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(11),
+        child: Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: active ? AppColors.primary : theme.colorScheme.surface,
+            border: Border.all(color: active ? AppColors.primary : theme.dividerColor),
+            borderRadius: BorderRadius.circular(11),
+          ),
+          child: Icon(
+            Icons.checklist,
+            size: 18,
+            color: active ? Colors.white : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+          ),
         ),
       ),
     );
@@ -512,18 +574,21 @@ class _SearchButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(11),
-      child: Container(
-        width: 34,
-        height: 34,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          border: Border.all(color: theme.dividerColor),
-          borderRadius: BorderRadius.circular(11),
+    return Tooltip(
+      message: 'Search tasks (/)',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(11),
+        child: Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            border: Border.all(color: theme.dividerColor),
+            borderRadius: BorderRadius.circular(11),
+          ),
+          child: Icon(Icons.search, size: 18, color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
         ),
-        child: Icon(Icons.search, size: 18, color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
       ),
     );
   }
@@ -545,6 +610,7 @@ class _OverflowButton extends StatelessWidget {
         if (showInviteAndSettings) const PopupMenuItem(value: 'invite', child: Text('Invite')),
         const PopupMenuItem(value: 'activity', child: Text('Activity')),
         const PopupMenuItem(value: 'export', child: Text('Export CSV')),
+        if (showInviteAndSettings) const PopupMenuItem(value: 'import', child: Text('Import CSV')),
         if (showInviteAndSettings) const PopupMenuItem(value: 'settings', child: Text('Board settings')),
       ],
       child: Container(
@@ -556,30 +622,6 @@ class _OverflowButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(11),
         ),
         child: Icon(Icons.more_horiz, size: 18, color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
-      ),
-    );
-  }
-}
-
-class _BackButton extends StatelessWidget {
-  final VoidCallback onTap;
-  const _BackButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(11),
-      child: Container(
-        width: 34,
-        height: 34,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          border: Border.all(color: theme.dividerColor),
-          borderRadius: BorderRadius.circular(11),
-        ),
-        child: Icon(Icons.arrow_back_ios_new, size: 14, color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
       ),
     );
   }

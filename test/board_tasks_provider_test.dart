@@ -1,7 +1,9 @@
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flowboard/data/csv_export.dart';
 import 'package:flowboard/models/board_column.dart';
 import 'package:flowboard/models/member.dart';
+import 'package:flowboard/models/priority.dart';
 import 'package:flowboard/providers/board_tasks_provider.dart';
 import 'package:flowboard/theme/app_colors.dart';
 
@@ -205,6 +207,62 @@ void main() {
       expect(bobNotifs.docs, hasLength(1));
       expect(bobNotifs.docs.first.data()['type'], 'mention');
       expect(carolNotifs.docs, isEmpty);
+    });
+
+    test('bulkImportTasks creates one task per row, matching assignee by name or falling back to the importer', () async {
+      final db = FakeFirebaseFirestore();
+      final notifier = _notifier(db, current: _alice);
+      await _settle();
+
+      final rows = [
+        const ParsedCsvTask(
+          title: 'Imported for Bob',
+          description: 'desc',
+          column: BoardColumnId.inProgress,
+          priority: Priority.high,
+          labels: ['Bug'],
+          assigneeName: 'Bob',
+        ),
+        const ParsedCsvTask(
+          title: 'Imported, unassigned',
+          description: '',
+          column: BoardColumnId.todo,
+          priority: Priority.low,
+          labels: [],
+          assigneeName: 'Nobody Here',
+        ),
+      ];
+
+      final count = await notifier.bulkImportTasks(rows, const [_alice, _bob]);
+      await _settle();
+
+      expect(count, 2);
+      final inProgress = notifier.state[BoardColumnId.inProgress]!;
+      expect(inProgress.map((t) => t.title), ['Imported for Bob']);
+      expect(inProgress.first.assignee.id, 'bob');
+      expect(inProgress.first.labels, ['Bug']);
+
+      final todo = notifier.state[BoardColumnId.todo]!;
+      expect(todo.map((t) => t.title), ['Imported, unassigned']);
+      expect(todo.first.assignee.id, 'alice'); // no match -> falls back to importer
+    });
+
+    test('addAttachment appends and removeAttachment removes by value', () async {
+      final db = FakeFirebaseFirestore();
+      final notifier = _notifier(db);
+      await _settle();
+      await notifier.addTask(BoardColumnId.todo, 'Task');
+      await _settle();
+      final id = notifier.state[BoardColumnId.todo]!.first.id;
+
+      await notifier.addAttachment(id, 'base64-a');
+      await notifier.addAttachment(id, 'base64-b');
+      await _settle();
+      expect(notifier.taskById(id)!.attachments, ['base64-a', 'base64-b']);
+
+      await notifier.removeAttachment(id, 'base64-a');
+      await _settle();
+      expect(notifier.taskById(id)!.attachments, ['base64-b']);
     });
   });
 }
