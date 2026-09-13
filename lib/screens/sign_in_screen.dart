@@ -8,7 +8,7 @@ import '../theme/app_text_styles.dart';
 import '../widgets/flowboard_logo.dart';
 import '../widgets/oauth_icons.dart';
 
-enum _SignInFailureChoice { createAccount, useGoogle, useMicrosoft }
+enum _SignInFailureChoice { createAccount, useGoogle, useApple }
 
 class SignInScreen extends ConsumerStatefulWidget {
   const SignInScreen({super.key});
@@ -22,7 +22,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
   String? _error;
   bool _emailExpanded = false;
 
-  // Set when a Google/Microsoft sign-in fails because this email already
+  // Set when a Google/Apple sign-in fails because this email already
   // has a password-based account — captured so it can be linked
   // automatically once the user signs in with that password below,
   // instead of ending up with two disconnected accounts for one email.
@@ -54,7 +54,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
 
   Future<void> _signInWithGoogle(FirebaseAuth auth) => _signInWithOAuth(auth, 'Google', () => signInWithGoogle(auth));
 
-  Future<void> _signInWithMicrosoft(FirebaseAuth auth) => _signInWithOAuth(auth, 'Microsoft', () => signInWithMicrosoft(auth));
+  Future<void> _signInWithApple(FirebaseAuth auth) => _signInWithOAuth(auth, 'Apple', () => signInWithApple(auth));
 
   Future<void> _signInWithOAuth(FirebaseAuth auth, String providerLabel, Future<void> Function() signIn) async {
     setState(() {
@@ -132,8 +132,8 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
         final choice = await _resolveSignInFailure(email);
         if (choice == _SignInFailureChoice.useGoogle) {
           await _signInWithGoogle(auth);
-        } else if (choice == _SignInFailureChoice.useMicrosoft) {
-          await _signInWithMicrosoft(auth);
+        } else if (choice == _SignInFailureChoice.useApple) {
+          await _signInWithApple(auth);
         } else if (choice == _SignInFailureChoice.createAccount) {
           await _run(() async {
             try {
@@ -142,7 +142,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
               if (e.code == 'email-already-in-use') {
                 throw FirebaseAuthException(
                   code: e.code,
-                  message: 'This email is already registered — most likely with Google or Microsoft. Try one of those above instead.',
+                  message: 'This email is already registered — most likely with Google or Apple. Try one of those above instead.',
                 );
               }
               rethrow;
@@ -168,7 +168,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Text(
-              'Either the password is wrong, there\'s no account yet for $email, or this email is already registered through Google or Microsoft (which don\'t use a password here).',
+              'Either the password is wrong, there\'s no account yet for $email, or this email is already registered through Google or Apple (which don\'t use a password here).',
               style: AppTextStyles.bodySmall(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7)),
             ),
           ),
@@ -182,8 +182,8 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
             child: const Text('Try Google instead', style: TextStyle(color: AppColors.primary)),
           ),
           SimpleDialogOption(
-            onPressed: () => Navigator.of(context).pop(_SignInFailureChoice.useMicrosoft),
-            child: const Text('Try Microsoft instead', style: TextStyle(color: AppColors.primary)),
+            onPressed: () => Navigator.of(context).pop(_SignInFailureChoice.useApple),
+            child: const Text('Try Apple instead', style: TextStyle(color: AppColors.primary)),
           ),
           SimpleDialogOption(
             onPressed: () => Navigator.of(context).pop(),
@@ -262,26 +262,26 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                       ),
               ),
               const SizedBox(height: 10),
-              OutlinedButton(
-                onPressed: _busy ? null : () => _signInWithMicrosoft(auth),
-                style: OutlinedButton.styleFrom(
+              FilledButton(
+                onPressed: _busy ? null : () => _signInWithApple(auth),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.black,
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  side: BorderSide(color: theme.dividerColor),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadii.button)),
                 ),
                 child: _busy
-                    ? SizedBox(
+                    ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.onSurface),
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
                     : Row(
                         mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const MicrosoftIcon(size: 18),
+                          const AppleIcon(size: 20),
                           const SizedBox(width: 10),
-                          Text('Continue with Microsoft', style: AppTextStyles.bodyLarge(color: theme.colorScheme.onSurface).copyWith(fontWeight: FontWeight.w700)),
+                          Text('Continue with Apple', style: AppTextStyles.bodyLarge(color: Colors.white).copyWith(fontWeight: FontWeight.w700)),
                         ],
                       ),
               ),

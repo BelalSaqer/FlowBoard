@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
 import 'package:flutter/material.dart';
@@ -6,11 +7,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flowboard/main.dart';
+import 'package:flowboard/models/member.dart';
 import 'package:flowboard/providers/auth_provider.dart';
 import 'package:flowboard/providers/profile_provider.dart';
+import 'package:flowboard/screens/auth_gate.dart';
+import 'package:flowboard/screens/boards_list_screen.dart';
 import 'package:flowboard/screens/onboarding_screen.dart';
 import 'package:flowboard/screens/sign_in_screen.dart';
 import 'package:flowboard/screens/splash_screen.dart';
+import 'package:flowboard/theme/app_colors.dart';
 import 'package:flowboard/widgets/empty_states.dart';
 import 'package:flowboard/widgets/flowboard_logo.dart';
 
@@ -74,7 +79,7 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
 
-  testWidgets('SignInScreen offers Google, Microsoft, email, and guest', (WidgetTester tester) async {
+  testWidgets('SignInScreen offers Google, Apple, email, and guest', (WidgetTester tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -86,7 +91,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Continue with Google'), findsOneWidget);
-    expect(find.text('Continue with Microsoft'), findsOneWidget);
+    expect(find.text('Continue with Apple'), findsOneWidget);
     expect(find.text('Continue with Email'), findsOneWidget);
     expect(find.text('Continue as Guest'), findsOneWidget);
 
@@ -95,5 +100,56 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('EMAIL'), findsOneWidget);
     expect(find.text('PASSWORD'), findsOneWidget);
+  });
+
+  testWidgets('Join with an invite link dialog joins a real board from a pasted URL', (WidgetTester tester) async {
+    final db = FakeFirebaseFirestore();
+    await db.collection('boards').doc('target-board').set({
+      'name': 'Target Board',
+      'color': AppColors.primary.toARGB32(),
+      'ownerId': 'owner',
+      'memberIds': ['owner'],
+      'roles': {'owner': 'owner'},
+      'members': [
+        {'id': 'owner', 'name': 'Owner', 'initials': 'OW', 'color': AppColors.primary.toARGB32()},
+      ],
+      'linkJoinEnabled': true,
+      'updatedAt': Timestamp.now(),
+    });
+
+    const joiner = Member(id: 'joiner', name: 'Joiner', initials: 'JN', color: AppColors.priorityHigh);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          firebaseAuthProvider.overrideWithValue(
+            MockFirebaseAuth(signedIn: true, mockUser: MockUser(uid: 'joiner', isAnonymous: false)),
+          ),
+          firestoreProvider.overrideWithValue(db),
+          currentMemberStateProvider.overrideWith((ref) => joiner),
+        ],
+        child: const MaterialApp(home: BoardsListScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Joiner isn't a member of anything yet, so the empty state shows.
+    expect(find.text('Join with an invite link'), findsOneWidget);
+
+    await tester.tap(find.text('Join with an invite link'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'flowboard-app-7539.web.app/join/...'),
+      'https://flowboard-app-7539.web.app/join/target-board',
+    );
+    await tester.tap(find.text('Join'));
+    await tester.pumpAndSettle();
+
+    // Landed on the joined board's detail screen.
+    expect(find.text('Target Board'), findsOneWidget);
+
+    final boardDoc = await db.collection('boards').doc('target-board').get();
+    expect(boardDoc.data()!['memberIds'], containsAll(['owner', 'joiner']));
   });
 }

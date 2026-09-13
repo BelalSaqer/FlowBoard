@@ -27,41 +27,16 @@ class GoogleIcon extends StatelessWidget {
   }
 }
 
-/// The Microsoft "four squares" mark, built from plain colored boxes —
-/// instantly recognizable, no asset needed.
-class MicrosoftIcon extends StatelessWidget {
+/// The Apple mark, via Flutter's built-in Material icon glyph — no
+/// asset needed, color passed in so it can be white-on-black (the
+/// standard "Sign in with Apple" button style) or any other context.
+class AppleIcon extends StatelessWidget {
   final double size;
-  const MicrosoftIcon({super.key, this.size = 18});
+  final Color color;
+  const AppleIcon({super.key, this.size = 18, this.color = Colors.white});
 
   @override
   Widget build(BuildContext context) {
-    final cell = (size - 2) / 2;
-    Widget square(Color color) => Container(width: cell, height: cell, color: color);
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              square(const Color(0xFFF25022)),
-              const SizedBox(width: 2),
-              square(const Color(0xFF7FBA00)),
-            ],
-          ),
-          const SizedBox(height: 2),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              square(const Color(0xFF00A4EF)),
-              const SizedBox(width: 2),
-              square(const Color(0xFFFFB900)),
-            ],
-          ),
-        ],
-      ),
-    );
+    return Icon(Icons.apple, size: size, color: color);
   }
 }

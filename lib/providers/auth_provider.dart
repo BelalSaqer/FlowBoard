@@ -17,14 +17,14 @@ Future<void> signInWithGoogle(FirebaseAuth auth) async {
   await auth.signInWithPopup(GoogleAuthProvider());
 }
 
-/// Generic OAuthProvider('microsoft.com') — covers personal Microsoft
-/// accounts and Entra ID (Azure AD) work/school accounts alike. Requires
-/// "Microsoft" to be enabled as a sign-in provider in the Firebase
-/// console, which in turn needs an app registration in Azure Portal
-/// (free, no billing) supplying the Application (client) ID/secret —
-/// see the setup notes wherever this is called from the UI.
-Future<void> signInWithMicrosoft(FirebaseAuth auth) async {
-  final provider = OAuthProvider('microsoft.com');
+/// Generic OAuthProvider('apple.com'). Apple only returns the user's
+/// name/email on the very first authorization ever granted to this
+/// Services ID — subsequent sign-ins omit them, which is an Apple
+/// platform behavior, not something this app can change.
+Future<void> signInWithApple(FirebaseAuth auth) async {
+  final provider = OAuthProvider('apple.com')
+    ..addScope('email')
+    ..addScope('name');
   await auth.signInWithPopup(provider);
 }
 
