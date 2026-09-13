@@ -77,8 +77,15 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
           _pendingOAuthCredential = e.credential;
           _error = 'An account already exists for $email with a password. Sign in below, and your $providerLabel account will be linked for next time.';
         });
+      } else if (e.code == 'popup-closed-by-user' || e.code == 'cancelled-popup-request') {
+        // They just closed the popup — not worth an error message.
+        setState(() {});
       } else {
-        setState(() => _error = '$providerLabel sign-in failed. If you already have a FlowBoard account with this email and a password, sign in with that instead.');
+        // Anything else (provider not enabled yet, network issue, etc.)
+        // gets Firebase's own mapped message rather than a generic
+        // "sign in with your password instead" guess that would be
+        // actively misleading for, say, operation-not-allowed.
+        setState(() => _error = friendlyAuthErrorMessage(e));
       }
     } catch (e) {
       if (mounted) setState(() => _error = friendlyAuthErrorMessage(e));
