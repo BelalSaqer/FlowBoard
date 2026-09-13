@@ -1,53 +1,57 @@
 # FlowBoard
 
-A real-time collaborative task board — built with Flutter and Firebase. Every
-piece of "real-time" behavior here is a genuine Firestore listener chain, not
-a simulated demo: drag a card and another open tab moves it live; two people
-editing the same card get a real conflict banner computed from actual
-concurrent writes; a teammate's presence pill appears from a live heartbeat.
+A real-time collaborative task board — built with Flutter and Firebase as a
+portfolio-grade engineering project. Every piece of "real-time" behavior
+here is a genuine Firestore listener chain, not a simulated demo: drag a
+card and another open tab moves it live; two people editing the same card
+get a real conflict banner computed from actual concurrent writes; a
+teammate's presence pill appears from a live heartbeat.
 
 **Live app:** https://flowboard-app-7539.web.app
 
 ## Features
 
-- **Boards & tasks** — create/rename/recolor/archive boards, drag-and-drop
-  cards across To Do / In Progress / Done with fractional-index ordering,
-  task labels, due dates with overdue/due-soon indicators, subtasks,
-  comments with `@mention` notifications and lightweight markdown
-  (`**bold**`, `*italic*`, `` `code` ``, `[links](url)`), small image
+**Boards & tasks**
+- Create, rename, recolor, and archive boards; drag-and-drop cards across
+  To Do / In Progress / Done with fractional-index ordering
+- Start from a template (Sprint board, Content calendar, Bug tracker) or
+  blank
+- Labels, due dates with overdue/due-soon indicators, subtasks, small image
   attachments, and a per-board activity log with a 7-day velocity chart
-- **Board templates** — start from a Sprint board, Content calendar, Bug
-  tracker, or blank
-- **My Tasks** — everything assigned to you across every board you're in,
-  grouped by overdue/due-soon/upcoming, in one place
-- **Bulk actions** — multi-select mode to move or delete several tasks at
-  once
-- **CSV export & import** — download any board's tasks as a spreadsheet, or
-  bulk-create tasks from one
-- **Saved filters** — name and re-apply a filter combination per board
-  instead of re-selecting it every time
-- **Keyboard shortcuts** — `n` for a new task, `/` for search, `Esc` to
-  close a sheet
-- **Real-time collaboration** — live presence, and conflict detection that
-  flags when someone else edited a card while you had it open
-- **AI-assisted subtasks** — breaks a task into a checklist via the Gemini
-  API (falls back to a static suggestion list with no key configured)
-- **Auth** — Google, Apple, email/password, or guest, with account linking
+- Comments with `@mention` notifications and lightweight markdown
+  (`**bold**`, `*italic*`, `` `code` ``, `[links](url)`)
+- Multi-select bulk move/delete, and undoable task/board deletion
+
+**Finding things**
+- **My Tasks** — everything assigned to you across every board you're in
+- Search plus priority, assignee, overdue, and due-soon filters, with
+  named/saved filter combinations per board
+- CSV export and import (round-trips losslessly)
+- Keyboard shortcuts — `n` for a new task, `/` for search, `Esc` to close
+  a sheet
+
+**Real-time collaboration**
+- Live presence and conflict detection (flags when someone else edited a
+  card while you had it open)
+- AI-assisted subtasks via the Gemini API (falls back to a static
+  suggestion list with no key configured)
+
+**Identity & sharing**
+- Google, Apple, email/password, or guest sign-in, with account linking
   and clear recovery paths for Firebase's ambiguous credential errors
-- **Reserved usernames & avatar photos** — race-safe username claims,
-  client-compressed photo upload (no paid storage backend required)
-- **Three ways to invite** — by email, by `@username`, or a shareable
+- Reserved `@usernames` (server-validated format, race-safe claims) and
+  client-compressed avatar photo upload — no paid storage backend
+- Three ways to invite: by email, by `@username`, or a shareable
   `/join/{boardId}` link
-- **Real permissions** — per-board Owner/Editor/Viewer roles enforced by
-  Firestore Security Rules, not just hidden UI
-- **Search & filters** — text search plus priority, assignee, overdue, and
-  due-soon filters
-- **Notifications, light/dark/system theme, branded splash screen**
-- **Installable PWA** — a filled-in manifest, real icons, and a registered
-  service worker mean the live app is installable from the browser
-- **Accessibility** — icon-only buttons carry real tooltip/semantic labels
-  (not just bare icons), and priority-tag color pairs are checked against
-  WCAG AA contrast rather than assumed
+- Real per-board Owner/Editor/Viewer permissions enforced by Firestore
+  Security Rules, not just hidden UI
+
+**Polish**
+- Notifications, light/dark/system theme, branded splash screen
+- Installable PWA (filled-in manifest, real icons, registered service
+  worker)
+- Accessibility pass: tooltip/semantic labels on every icon-only button,
+  priority-tag colors checked against WCAG AA contrast rather than assumed
 
 ## Tech stack
 
@@ -56,8 +60,9 @@ Google Gemini API
 
 Deliberately built without any paid infrastructure — no Cloud Functions, no
 Firebase Storage (now Blaze-only even for free-tier usage). Avatar photos
-are compressed client-side and stored inline; invite links and permissions
-are enforced entirely through Firestore Security Rules.
+and task attachments are compressed client-side and stored inline; invite
+links and permissions are enforced entirely through Firestore Security
+Rules; saved filters live in local device storage.
 
 ## Getting started
 
@@ -82,7 +87,7 @@ flutter analyze
 flutter test
 ```
 
-45+ provider/widget tests run against `fake_cloud_firestore` and
+56 provider/widget tests run against `fake_cloud_firestore` and
 `firebase_auth_mocks` — no live Firebase project needed. A separate
 Playwright suite in [`test/e2e/`](test/e2e/) checks things unit tests can't
 see (real OAuth popups, real deep links, real Firestore round trips)
@@ -103,11 +108,12 @@ a release web build on every push and pull request.
 
 ```
 lib/
-├── data/        # Firestore ⇄ model mappers, CSV export, demo-data seed
+├── data/        # Firestore ⇄ model mappers, CSV import/export, board
+│                  templates, saved filters, rich-text parsing, demo seed
 ├── models/      # plain immutable data classes
 ├── providers/   # all Firestore/Auth logic (Riverpod)
 ├── screens/     # one file per full-page route
-├── services/    # Gemini client, deep-link capture, web-only helpers
+├── services/    # Gemini client, deep-link capture, web-only file I/O
 ├── theme/       # design tokens
 └── widgets/     # reusable shared UI
 
@@ -133,6 +139,8 @@ firestore.rules  # full security model — see the project documentation
 - CSV import matches the "Assignee" column by exact display name against
   the board's current members; no match (or a blank cell) falls back to
   whoever ran the import, since a spreadsheet can't carry a real member id.
+- Saved filters live in browser/device local storage, not Firestore — they
+  don't follow you to a different device.
 
 ## Documentation
 
