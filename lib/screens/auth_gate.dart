@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/member.dart';
 import '../providers/auth_provider.dart';
+import '../providers/boards_provider.dart';
 import '../providers/profile_provider.dart';
+import '../services/deep_link.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
+import 'board_detail_screen.dart';
 import 'boards_list_screen.dart';
 import 'sign_in_screen.dart';
 
@@ -40,9 +43,13 @@ class _ProfileGate extends ConsumerWidget {
 
     return member.when(
       data: (m) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
+        final joinBoardId = takeInitialJoinBoardId();
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
           if (ref.read(currentMemberStateProvider) != m) {
             ref.read(currentMemberStateProvider.notifier).state = m;
+          }
+          if (joinBoardId != null) {
+            await _handleJoinLink(ref, joinBoardId, m);
           }
         });
         return const BoardsListScreen();
@@ -50,6 +57,22 @@ class _ProfileGate extends ConsumerWidget {
       loading: () => const _Loading(),
       error: (err, _) => _ErrorScreen(error: err, onRetry: () => ref.invalidate(currentMemberProvider)),
     );
+  }
+
+  // Uses the app-level navigatorKey/scaffoldMessengerKey rather than a
+  // widget's BuildContext: this fires from a provider callback that can
+  // outlive whichever specific Element happened to be build()ing when it
+  // was scheduled, so there's no single BuildContext guaranteed to still
+  // be mounted after the network round-trip to Firestore.
+  Future<void> _handleJoinLink(WidgetRef ref, String boardId, Member me) async {
+    try {
+      final board = await ref.read(boardsProvider.notifier).joinBoardByLink(boardId, me);
+      navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => BoardDetailScreen(board: board)));
+    } catch (e) {
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        SnackBar(content: Text(e is StateError ? e.message : 'Couldn\'t open that invite link.')),
+      );
+    }
   }
 }
 

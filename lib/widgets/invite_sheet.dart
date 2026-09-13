@@ -10,11 +10,11 @@ import '../theme/app_metrics.dart';
 import '../theme/app_text_styles.dart';
 import 'member_role_row.dart';
 
-/// Shareable board link + member list, plus real add-by-email. The link
-/// scheme (flowboard.app/b/{boardId}) is still a placeholder — it isn't a
-/// real deep link yet since there's no invite/join backend — but adding
-/// an existing account by email is real: it looks the person up by their
-/// stored `users/{uid}.email` and adds them to the board's member list.
+/// Shareable board link + member list + add-by-email, all real. The
+/// invite link only actually admits new members while `linkJoinEnabled`
+/// is on; opening it takes anyone signed in straight to this board via
+/// `BoardsNotifier.joinBoardByLink` (wired up in main.dart's initial
+/// route parsing).
 class InviteSheet extends ConsumerStatefulWidget {
   final Board board;
   const InviteSheet({super.key, required this.board});
@@ -29,7 +29,7 @@ class _InviteSheetState extends ConsumerState<InviteSheet> {
   String? _error;
   String? _success;
 
-  String get _link => 'flowboard.app/b/${widget.board.id}';
+  String _link(Board board) => 'flowboard-app-7539.web.app/join/${board.id}';
 
   @override
   void dispose() {
@@ -122,8 +122,24 @@ class _InviteSheetState extends ConsumerState<InviteSheet> {
                 style: AppTextStyles.metaMedium(color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
               ),
               const SizedBox(height: 20),
-              Text('INVITE LINK', style: AppTextStyles.meta(color: theme.colorScheme.onSurface.withValues(alpha: 0.5)).copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.4)),
-              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text('INVITE LINK', style: AppTextStyles.meta(color: theme.colorScheme.onSurface.withValues(alpha: 0.5)).copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.4)),
+                  ),
+                  Text(
+                    board.linkJoinEnabled ? 'Anyone with link can join' : 'Link disabled',
+                    style: AppTextStyles.metaSmall(color: theme.colorScheme.onSurface.withValues(alpha: 0.45)),
+                  ),
+                  const SizedBox(width: 6),
+                  Switch(
+                    value: board.linkJoinEnabled,
+                    activeTrackColor: AppColors.primary,
+                    onChanged: (v) => ref.read(boardsProvider.notifier).setLinkJoinEnabled(board.id, v),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
@@ -134,7 +150,7 @@ class _InviteSheetState extends ConsumerState<InviteSheet> {
                   children: [
                     Expanded(
                       child: Text(
-                        _link,
+                        _link(board),
                         overflow: TextOverflow.ellipsis,
                         style: AppTextStyles.bodySmall(color: theme.colorScheme.onSurface).copyWith(fontWeight: FontWeight.w600),
                       ),
@@ -142,10 +158,13 @@ class _InviteSheetState extends ConsumerState<InviteSheet> {
                     const SizedBox(width: 8),
                     FilledButton(
                       onPressed: () async {
-                        await Clipboard.setData(ClipboardData(text: 'https://$_link'));
+                        if (!board.linkJoinEnabled) {
+                          await ref.read(boardsProvider.notifier).setLinkJoinEnabled(board.id, true);
+                        }
+                        await Clipboard.setData(ClipboardData(text: 'https://${_link(board)}'));
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Link copied')),
+                            const SnackBar(content: Text('Link copied — anyone with it can now join')),
                           );
                         }
                       },

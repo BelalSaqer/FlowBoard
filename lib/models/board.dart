@@ -9,6 +9,7 @@ class Board {
   final DateTime updatedAt;
   final String ownerId;
   final Map<String, String> roles;
+  final bool linkJoinEnabled;
 
   const Board({
     required this.id,
@@ -18,6 +19,7 @@ class Board {
     required this.updatedAt,
     required this.ownerId,
     this.roles = const {},
+    this.linkJoinEnabled = false,
   });
 
   /// 'owner', 'editor', or 'viewer'. The owner always resolves to 'owner'

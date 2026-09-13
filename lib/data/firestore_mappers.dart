@@ -32,7 +32,7 @@ Board boardFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
   return Board(
     id: doc.id,
     name: data['name'] as String,
-    color: Color(data['color'] as int),
+    color: Color(data['color'] as int? ?? 0xFF6C5CE7),
     members: members,
     updatedAt: (data['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     // Seeded boards predate the ownerId field; fall back to the first
@@ -42,6 +42,7 @@ Board boardFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
       for (final entry in (data['roles'] as Map<String, dynamic>? ?? {}).entries)
         entry.key: entry.value as String,
     },
+    linkJoinEnabled: data['linkJoinEnabled'] as bool? ?? false,
   );
 }
 

@@ -66,8 +66,23 @@ service cloud.firestore {
       function isOwner() {
         return isSignedIn() && resource.data.ownerId == request.auth.uid;
       }
+      function isLinkJoinEnabled() {
+        return resource.data.linkJoinEnabled == true;
+      }
+      // A non-member may add themselves (only themselves, only as
+      // 'editor', touching only membership fields) while the board
+      // owner has the invite-link toggle on — the same "anyone with the
+      // link can join" model as Slack/Notion share links.
+      function isSelfJoiningViaLink() {
+        return isLinkJoinEnabled()
+          && !(request.auth.uid in resource.data.memberIds)
+          && request.resource.data.memberIds == resource.data.memberIds.concat([request.auth.uid])
+          && request.resource.data.roles.diff(resource.data.roles).affectedKeys().hasOnly([request.auth.uid])
+          && request.resource.data.roles[request.auth.uid] == 'editor'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberIds', 'roles', 'updatedAt']);
+      }
 
-      allow read: if isSignedIn() && (isDemoBoard() || isMember());
+      allow read: if isSignedIn() && (isDemoBoard() || isMember() || isLinkJoinEnabled());
       allow create: if isSignedIn()
         && isMemberOfNew()
         && request.resource.data.ownerId == request.auth.uid;
@@ -75,7 +90,9 @@ service cloud.firestore {
       // add a member, archive); only the owner can change `roles`. Demo
       // boards bypass membership entirely, same as their read rule.
       allow update: if isSignedIn()
-        && (isDemoBoard() || (isMember() && myRole() != 'viewer' && (rolesUnchanged() || isOwner())));
+        && (isDemoBoard()
+            || (isMember() && myRole() != 'viewer' && (rolesUnchanged() || isOwner()))
+            || isSelfJoiningViaLink());
       allow delete: if isOwner();
 
       match /presence/{uid} {

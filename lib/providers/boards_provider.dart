@@ -170,6 +170,52 @@ class BoardsNotifier extends StateNotifier<List<Board>> {
     });
   }
 
+  /// Toggles whether the board's invite link actually admits new members.
+  /// While enabled, security rules let any signed-in holder of the link
+  /// both read the board and add themselves as an editor — the same
+  /// "anyone with the link can join" model as Slack/Notion share links.
+  Future<void> setLinkJoinEnabled(String boardId, bool enabled) async {
+    await db.collection('boards').doc(boardId).update({
+      'linkJoinEnabled': enabled,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Called when the app opens with a `/join/{boardId}` link. Adds the
+  /// current user to the board if its link-join toggle is on; a no-op if
+  /// they're already a member. Throws if the board doesn't exist or the
+  /// link has been turned off, so the caller can show a clear error.
+  Future<Board> joinBoardByLink(String boardId, Member me) async {
+    final ref = db.collection('boards').doc(boardId);
+    final snap = await ref.get();
+    if (!snap.exists) {
+      throw StateError('This invite link is no longer valid.');
+    }
+    final board = boardFromDoc(snap);
+    if (board.members.any((m) => m.id == me.id)) {
+      return board;
+    }
+    if (!board.linkJoinEnabled) {
+      throw StateError('This invite link has been turned off by the board owner.');
+    }
+    await ref.update({
+      'members': FieldValue.arrayUnion([memberToMap(me)]),
+      'memberIds': FieldValue.arrayUnion([me.id]),
+      'roles.${me.id}': 'editor',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    return Board(
+      id: board.id,
+      name: board.name,
+      color: board.color,
+      members: [...board.members, me],
+      updatedAt: DateTime.now(),
+      ownerId: board.ownerId,
+      roles: {...board.roles, me.id: 'editor'},
+      linkJoinEnabled: board.linkJoinEnabled,
+    );
+  }
+
   /// Permanently deletes a board along with its tasks. Firestore doesn't
   /// cascade-delete subcollections, so tasks are fetched and removed
   /// explicitly first. Presence docs are left alone — security rules

@@ -79,5 +79,47 @@ void main() {
       await _settle();
       expect(notifier.state.any((b) => b.id == boardId), isTrue);
     });
+
+    test('joinBoardByLink adds the joiner as editor once the link is enabled', () async {
+      final db = FakeFirebaseFirestore();
+      final notifier = BoardsNotifier(db, 'alice', false);
+      await _settle();
+      await notifier.createBoard('Roadmap', Colors.blue, _alice);
+      await _settle();
+      final boardId = (await db.collection('boards').where('name', isEqualTo: 'Roadmap').get()).docs.single.id;
+
+      await notifier.setLinkJoinEnabled(boardId, true);
+      await _settle();
+
+      final joined = await notifier.joinBoardByLink(boardId, _bob);
+      expect(joined.roleOf('bob'), 'editor');
+
+      final data = (await db.collection('boards').doc(boardId).get()).data()!;
+      expect(data['memberIds'], containsAll(['alice', 'bob']));
+      expect(data['roles']['bob'], 'editor');
+    });
+
+    test('joinBoardByLink throws if the link has been turned off', () async {
+      final db = FakeFirebaseFirestore();
+      final notifier = BoardsNotifier(db, 'alice', false);
+      await _settle();
+      await notifier.createBoard('Roadmap', Colors.blue, _alice);
+      await _settle();
+      final boardId = (await db.collection('boards').where('name', isEqualTo: 'Roadmap').get()).docs.single.id;
+
+      expect(() => notifier.joinBoardByLink(boardId, _bob), throwsStateError);
+    });
+
+    test('joinBoardByLink is a no-op if already a member', () async {
+      final db = FakeFirebaseFirestore();
+      final notifier = BoardsNotifier(db, 'alice', false);
+      await _settle();
+      await notifier.createBoard('Roadmap', Colors.blue, _alice);
+      await _settle();
+      final boardId = (await db.collection('boards').where('name', isEqualTo: 'Roadmap').get()).docs.single.id;
+
+      final joined = await notifier.joinBoardByLink(boardId, _alice);
+      expect(joined.roleOf('alice'), 'owner');
+    });
   });
 }
