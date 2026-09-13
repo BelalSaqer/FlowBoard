@@ -63,9 +63,23 @@ final notificationsProvider = StreamProvider.autoDispose<List<NotificationEntry>
       .map((snap) => [for (final d in snap.docs) _fromDoc(d)]);
 });
 
-final unreadNotificationCountProvider = Provider.autoDispose<int>((ref) {
-  final notifs = ref.watch(notificationsProvider).value ?? const [];
-  return notifs.where((n) => !n.read).length;
+/// True unread count, independent of [notificationsPageSizeProvider]'s
+/// page limit. Deriving this from [notificationsProvider] (as it used to)
+/// undercounts once someone has more unread notifications than the
+/// current page size — the badge would silently cap out at whatever's
+/// loaded instead of the real total. A separate, unpaginated,
+/// unread-only query stays genuinely live (matching how everything else
+/// in this app updates in real time) without needing a one-shot count()
+/// aggregation — the filtered result set here is naturally small, since
+/// it's only ever the currently-unread docs.
+final unreadNotificationCountProvider = StreamProvider.autoDispose<int>((ref) {
+  final me = ref.watch(currentMemberStateProvider);
+  final db = ref.watch(firestoreProvider);
+  if (me == null) return Stream.value(0);
+  return _notificationsCol(db, me.id)
+      .where('read', isEqualTo: false)
+      .snapshots()
+      .map((snap) => snap.docs.length);
 });
 
 Future<void> markAllNotificationsRead(FirebaseFirestore db, String uid, List<NotificationEntry> unread) async {

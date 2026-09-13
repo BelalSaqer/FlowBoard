@@ -99,11 +99,30 @@ ActivityEntry activityFromMap(Map<String, dynamic> map) => ActivityEntry(
   dotColor: Color(map['dotColor'] as int),
 );
 
-BoardColumnId columnFromString(String s) =>
-    BoardColumnId.values.firstWhere((c) => c.name == s);
+// Both fall back to a sensible default rather than throwing: a task
+// document with a `column`/`priority` value that doesn't match a known
+// enum name (a manual Firestore edit, a value written by some future app
+// version, any other malformed document) would otherwise throw a
+// StateError synchronously inside BoardTasksNotifier._onSnapshot — which
+// a stream's `onError` does NOT catch (that only sees stream-level
+// errors, not exceptions thrown inside the onData callback) — so one bad
+// document would silently break real-time updates for that entire board,
+// for everyone viewing it.
+BoardColumnId columnFromString(String s) => BoardColumnId.values.firstWhere(
+  (c) => c.name == s,
+  orElse: () {
+    debugPrint('columnFromString: unrecognized column "$s" — defaulting to todo');
+    return BoardColumnId.todo;
+  },
+);
 
-Priority priorityFromString(String s) =>
-    Priority.values.firstWhere((p) => p.name == s);
+Priority priorityFromString(String s) => Priority.values.firstWhere(
+  (p) => p.name == s,
+  orElse: () {
+    debugPrint('priorityFromString: unrecognized priority "$s" — defaulting to medium');
+    return Priority.medium;
+  },
+);
 
 /// A task document also carries `order` (fractional index within its
 /// column, used for drag-reordering) and `updatedBy` (who last wrote to

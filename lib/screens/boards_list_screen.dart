@@ -83,7 +83,7 @@ class BoardsListScreen extends ConsumerWidget {
                 ),
                 Consumer(
                   builder: (context, ref, _) {
-                    final unread = ref.watch(unreadNotificationCountProvider);
+                    final unread = ref.watch(unreadNotificationCountProvider).value ?? 0;
                     return Tooltip(
                       message: unread > 0 ? 'Notifications ($unread unread)' : 'Notifications',
                       child: InkWell(
