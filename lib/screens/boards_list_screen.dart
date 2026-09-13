@@ -118,9 +118,7 @@ class BoardsListScreen extends ConsumerWidget {
             if (boards.isEmpty)
               BoardsEmptyState(
                 onCreateBoard: () => _showCreateBoardDialog(context, ref),
-                onJoinWithLink: () => ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Invite links are coming soon')),
-                ),
+                onJoinWithLink: () => _showJoinByLinkDialog(context, ref),
               )
             else ...[
               const SizedBox(height: 4),
@@ -176,6 +174,119 @@ class BoardsListScreen extends ConsumerWidget {
     showDialog<void>(
       context: context,
       builder: (_) => _CreateBoardDialog(creator: me),
+    );
+  }
+
+  void _showJoinByLinkDialog(BuildContext context, WidgetRef ref) {
+    final me = ref.read(currentMemberStateProvider);
+    if (me == null) return;
+    showDialog<void>(
+      context: context,
+      builder: (_) => _JoinByLinkDialog(me: me),
+    );
+  }
+}
+
+/// Extracts a board id from either a full invite link
+/// (`https://.../join/{id}`, with or without scheme) or a bare id pasted
+/// directly, so this works whether someone pastes the whole URL Copy
+/// Link gave them or just the id at the end of it.
+String? _parseBoardIdFromInput(String input) {
+  final trimmed = input.trim();
+  if (trimmed.isEmpty) return null;
+  final joinIndex = trimmed.indexOf('/join/');
+  if (joinIndex != -1) {
+    final rest = trimmed.substring(joinIndex + '/join/'.length);
+    final id = rest.split(RegExp(r'[/?#]')).first.trim();
+    return id.isEmpty ? null : id;
+  }
+  return trimmed;
+}
+
+class _JoinByLinkDialog extends ConsumerStatefulWidget {
+  final Member me;
+  const _JoinByLinkDialog({required this.me});
+
+  @override
+  ConsumerState<_JoinByLinkDialog> createState() => _JoinByLinkDialogState();
+}
+
+class _JoinByLinkDialogState extends ConsumerState<_JoinByLinkDialog> {
+  final _controller = TextEditingController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _join() async {
+    final boardId = _parseBoardIdFromInput(_controller.text);
+    if (boardId == null) {
+      setState(() => _error = 'Paste an invite link to continue.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final board = await ref.read(boardsProvider.notifier).joinBoardByLink(boardId, widget.me);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => BoardDetailScreen(board: board)));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = e is StateError ? e.message : 'That link doesn\'t look right — check it and try again.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      backgroundColor: theme.colorScheme.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: Text('Join with an invite link', style: AppTextStyles.h3(color: theme.colorScheme.onSurface)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            style: AppTextStyles.bodyLarge(color: theme.colorScheme.onSurface),
+            decoration: const InputDecoration(hintText: 'flowboard-app-7539.web.app/join/...'),
+            onSubmitted: (_) => _join(),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 10),
+            Text(_error!, style: AppTextStyles.bodySmall(color: AppColors.priorityHigh)),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _busy ? null : _join,
+          style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
+          child: _busy
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              : const Text('Join'),
+        ),
+      ],
     );
   }
 }
