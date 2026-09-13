@@ -2,10 +2,13 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../data/board_templates.dart';
 import '../data/firestore_mappers.dart';
 import '../data/firestore_seed.dart';
+import '../models/activity_entry.dart';
 import '../models/board.dart';
 import '../models/member.dart';
+import '../theme/app_colors.dart';
 import '../screens/auth_gate.dart';
 import 'auth_provider.dart';
 import 'profile_provider.dart';
@@ -106,10 +109,15 @@ class BoardsNotifier extends StateNotifier<List<Board>> {
     }
   }
 
-  Future<void> createBoard(String name, Color color, Member creator) async {
+  Future<void> createBoard(
+    String name,
+    Color color,
+    Member creator, {
+    List<TemplateTask> templateTasks = const [],
+  }) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return;
-    await db.collection('boards').add(
+    final boardRef = await db.collection('boards').add(
       boardToMap(
         Board(
           id: '',
@@ -122,6 +130,38 @@ class BoardsNotifier extends StateNotifier<List<Board>> {
         ),
       ),
     );
+    if (templateTasks.isEmpty) return;
+
+    final tasksCol = boardRef.collection('tasks');
+    final columnOrders = <String, double>{};
+    final batch = db.batch();
+    for (final t in templateTasks) {
+      final order = (columnOrders[t.column.name] ?? -1000.0) + 1000.0;
+      columnOrders[t.column.name] = order;
+      final activity = ActivityEntry(
+        id: 'a-${DateTime.now().microsecondsSinceEpoch}-${t.title.hashCode}',
+        text: '${creator.name} created this card',
+        time: DateTime.now(),
+        dotColor: AppColors.primary,
+      );
+      batch.set(tasksCol.doc(), {
+        'title': t.title,
+        'description': t.description,
+        'priority': t.priority.name,
+        'assignee': memberToMap(creator),
+        'dueDate': null,
+        'column': t.column.name,
+        'order': order,
+        'subtasks': <Map<String, dynamic>>[],
+        'comments': <Map<String, dynamic>>[],
+        'activity': [activityToMap(activity)],
+        'labels': <String>[],
+        'attachments': <String>[],
+        'updatedAt': FieldValue.serverTimestamp(),
+        'updatedBy': memberToMap(creator),
+      });
+    }
+    await batch.commit();
   }
 
   Future<void> renameBoard(String boardId, String name) async {

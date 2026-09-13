@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../data/board_templates.dart';
 import '../providers/board_tasks_provider.dart';
 import '../providers/boards_provider.dart';
 import '../models/member.dart';
@@ -13,6 +14,7 @@ import '../widgets/member_avatar.dart';
 import 'archived_boards_screen.dart';
 import 'auth_gate.dart';
 import 'board_detail_screen.dart';
+import 'my_tasks_screen.dart';
 import 'notifications_screen.dart';
 import 'profile_screen.dart';
 
@@ -50,6 +52,30 @@ class BoardsListScreen extends ConsumerWidget {
                           decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(12)),
                           alignment: Alignment.center,
                           child: const Icon(Icons.add, color: Colors.white),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                Consumer(
+                  builder: (context, ref, _) {
+                    return Tooltip(
+                      message: 'My Tasks',
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(999),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const MyTasksScreen()),
+                        ),
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surface,
+                            border: Border.all(color: theme.dividerColor),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(Icons.checklist_rtl, size: 18, color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
                         ),
                       ),
                     );
@@ -311,6 +337,7 @@ class _CreateBoardDialog extends ConsumerStatefulWidget {
 class _CreateBoardDialogState extends ConsumerState<_CreateBoardDialog> {
   final _controller = TextEditingController();
   Color _color = AppColors.primary;
+  BoardTemplate _template = boardTemplates.first;
   bool _submitting = false;
 
   static const _palette = [
@@ -332,7 +359,7 @@ class _CreateBoardDialogState extends ConsumerState<_CreateBoardDialog> {
     setState(() => _submitting = true);
     await ref
         .read(boardsProvider.notifier)
-        .createBoard(_controller.text, _color, widget.creator);
+        .createBoard(_controller.text, _color, widget.creator, templateTasks: _template.tasks);
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -343,10 +370,13 @@ class _CreateBoardDialogState extends ConsumerState<_CreateBoardDialog> {
       backgroundColor: theme.colorScheme.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       title: Text('New board', style: AppTextStyles.h3(color: theme.colorScheme.onSurface)),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      content: SizedBox(
+        width: 320,
+        child: SingleChildScrollView(
+          child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           TextField(
             controller: _controller,
             autofocus: true,
@@ -376,7 +406,45 @@ class _CreateBoardDialogState extends ConsumerState<_CreateBoardDialog> {
                 ),
             ],
           ),
-        ],
+          const SizedBox(height: 18),
+          Text(
+            'STARTING POINT',
+            style: AppTextStyles.meta(color: theme.colorScheme.onSurface.withValues(alpha: 0.5)).copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.4),
+          ),
+          const SizedBox(height: 8),
+          for (final t in boardTemplates)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: InkWell(
+                onTap: () => setState(() => _template = t),
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: _template == t ? AppColors.primaryTint : theme.colorScheme.onSurface.withValues(alpha: 0.04),
+                    border: Border.all(color: _template == t ? AppColors.primary : Colors.transparent),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        t.name,
+                        style: AppTextStyles.bodySmall(color: theme.colorScheme.onSurface).copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      Text(
+                        t.description,
+                        style: AppTextStyles.metaSmall(color: theme.colorScheme.onSurface.withValues(alpha: 0.55)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+          ),
+        ),
       ),
       actions: [
         TextButton(

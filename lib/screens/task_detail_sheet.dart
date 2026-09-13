@@ -14,6 +14,7 @@ import '../theme/app_text_styles.dart';
 import '../theme/label_colors.dart';
 import '../widgets/member_avatar.dart';
 import '../widgets/priority_tag.dart';
+import '../widgets/rich_text_content.dart';
 import 'auth_gate.dart';
 
 const _maxAttachmentBytes = 120 * 1024;
@@ -346,12 +347,17 @@ class _TaskDetailSheetState extends ConsumerState<TaskDetailSheet> {
                       ],
                     ),
                     const SizedBox(height: 14),
-                    Text(
-                      task.description.isEmpty ? 'No description yet.' : task.description,
-                      style: AppTextStyles.bodyLarge(
-                        color: theme.colorScheme.onSurface.withValues(alpha: task.description.isEmpty ? 0.5 : 1),
-                      ).copyWith(height: 1.6),
-                    ),
+                    task.description.isEmpty
+                        ? Text(
+                            'No description yet.',
+                            style: AppTextStyles.bodyLarge(
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                            ).copyWith(height: 1.6),
+                          )
+                        : RichTextContent(
+                            text: task.description,
+                            style: AppTextStyles.bodyLarge(color: theme.colorScheme.onSurface).copyWith(height: 1.6),
+                          ),
                     const SizedBox(height: 14),
                     _AttachmentsRow(
                       task: task,
@@ -675,7 +681,7 @@ class _CommentTile extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 3),
-              _MentionText(text: comment.body, style: AppTextStyles.bodySmall(color: theme.colorScheme.onSurface).copyWith(height: 1.5)),
+              RichTextContent(text: comment.body, style: AppTextStyles.bodySmall(color: theme.colorScheme.onSurface).copyWith(height: 1.5)),
             ],
           ),
         ),
@@ -685,34 +691,6 @@ class _CommentTile extends StatelessWidget {
 }
 
 String _formatTime(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
-
-final _mentionPattern = RegExp(r'@[a-z0-9_]{3,20}', caseSensitive: false);
-
-/// Renders comment text with `@handle` tokens highlighted in the brand
-/// color, so a mention reads as a mention rather than plain text — purely
-/// visual here; resolving who it actually notifies happens server-side
-/// in [BoardTasksNotifier.addComment].
-class _MentionText extends StatelessWidget {
-  final String text;
-  final TextStyle style;
-  const _MentionText({required this.text, required this.style});
-
-  @override
-  Widget build(BuildContext context) {
-    final spans = <TextSpan>[];
-    var last = 0;
-    for (final match in _mentionPattern.allMatches(text)) {
-      if (match.start > last) spans.add(TextSpan(text: text.substring(last, match.start)));
-      spans.add(TextSpan(
-        text: match.group(0),
-        style: style.copyWith(color: AppColors.primary, fontWeight: FontWeight.w700),
-      ));
-      last = match.end;
-    }
-    if (last < text.length) spans.add(TextSpan(text: text.substring(last)));
-    return RichText(text: TextSpan(style: style, children: spans));
-  }
-}
 
 class _ActivityTimeline extends StatelessWidget {
   final List<dynamic> entries;

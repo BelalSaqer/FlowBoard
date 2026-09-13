@@ -49,34 +49,41 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
   bool _selectionMode = false;
   final Set<String> _selectedIds = {};
 
-  bool _isTypingSomewhere() {
-    final focused = FocusManager.instance.primaryFocus;
-    return focused != null && focused.context?.widget is EditableText;
+  // showModalBottomSheet keeps this route's widgets reachable by the key
+  // dispatch chain even while the sheet is on top and its own TextField
+  // has focus — unlike a full Navigator.push, it doesn't fully deactivate
+  // the page underneath. That's what let 'n'/'/' hijack keystrokes typed
+  // into a sheet's title/comment field even with CallbackShortcuts (which
+  // otherwise correctly respects focused-field consumption). Tracking
+  // "a sheet is open" explicitly and gating the shortcuts on it sidesteps
+  // that entirely, and is arguably the more correct behavior anyway —
+  // 'n' shouldn't open a second new-task sheet over the first one.
+  bool _sheetOpen = false;
+
+  Future<T?> _showSheet<T>(WidgetBuilder builder) async {
+    setState(() => _sheetOpen = true);
+    final result = await showModalBottomSheet<T>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: builder,
+    );
+    if (mounted) setState(() => _sheetOpen = false);
+    return result;
   }
 
-  // Registered on HardwareKeyboard directly (not a Shortcuts/Focus
-  // widget) so 'n'/'/' work regardless of which widget currently holds
-  // focus — the _isTypingSomewhere() guard is what actually keeps this
-  // from hijacking keystrokes while a text field is focused, since that
-  // doesn't happen automatically this way.
-  bool _handleKeyEvent(KeyEvent event) {
-    if (event is! KeyDownEvent || !mounted || _isTypingSomewhere()) return false;
-    if (event.logicalKey == LogicalKeyboardKey.keyN) {
-      final isViewer = () {
-        final myId = ref.read(currentMemberStateProvider)?.id;
-        final board = ref.read(boardsProvider).firstWhere((b) => b.id == widget.board.id, orElse: () => widget.board);
-        return myId != null && board.roleOf(myId) == 'viewer';
-      }();
-      if (!isViewer) {
-        _openNewTask(_columns[_activeColumn]);
-        return true;
-      }
-    } else if (event.logicalKey == LogicalKeyboardKey.slash) {
-      final board = ref.read(boardsProvider).firstWhere((b) => b.id == widget.board.id, orElse: () => widget.board);
-      Navigator.of(context).push(MaterialPageRoute(builder: (_) => SearchScreen(board: board)));
-      return true;
-    }
-    return false;
+  void _newTaskShortcut() {
+    if (_sheetOpen) return;
+    final myId = ref.read(currentMemberStateProvider)?.id;
+    final board = ref.read(boardsProvider).firstWhere((b) => b.id == widget.board.id, orElse: () => widget.board);
+    final isViewer = myId != null && board.roleOf(myId) == 'viewer';
+    if (!isViewer) _openNewTask(_columns[_activeColumn]);
+  }
+
+  void _searchShortcut() {
+    if (_sheetOpen) return;
+    final board = ref.read(boardsProvider).firstWhere((b) => b.id == widget.board.id, orElse: () => widget.board);
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => SearchScreen(board: board)));
   }
 
   static const _columns = BoardColumnId.values;
@@ -94,12 +101,10 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
         member: me,
       )..start();
     }
-    HardwareKeyboard.instance.addHandler(_handleKeyEvent);
   }
 
   @override
   void dispose() {
-    HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
     _heartbeat?.stop();
     _autoScrollTimer?.cancel();
     _scrollController.dispose();
@@ -179,12 +184,7 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
   }
 
   void _openTask(TaskCard task) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => TaskDetailSheet(boardId: widget.board.id, taskId: task.id),
-    );
+    _showSheet((_) => TaskDetailSheet(boardId: widget.board.id, taskId: task.id));
   }
 
   void _toggleSelectionMode() {
@@ -279,17 +279,12 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
           orElse: () => widget.board,
         );
     if (board.roleOf(me.id) == 'viewer') return;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => NewTaskSheet(
-        boardId: widget.board.id,
-        initialColumn: column,
-        members: board.members,
-        currentMember: me,
-      ),
-    );
+    _showSheet((_) => NewTaskSheet(
+          boardId: widget.board.id,
+          initialColumn: column,
+          members: board.members,
+          currentMember: me,
+        ));
   }
 
   @override
@@ -306,7 +301,21 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
     final myId = ref.watch(currentMemberStateProvider)?.id;
     final isViewer = myId != null && board.roleOf(myId) == 'viewer';
 
-    return Scaffold(
+    // CallbackShortcuts (not a raw HardwareKeyboard hook, which fires
+    // unconditionally regardless of focus). On Flutter web, a focused
+    // EditableText doesn't reliably mark plain character keys as
+    // "handled" — browser-side text composition inserts the character,
+    // but the key event can still bubble to an ancestor Shortcuts/
+    // CallbackShortcuts — so the real guard against hijacking keystrokes
+    // while typing is the explicit _sheetOpen check inside
+    // _newTaskShortcut/_searchShortcut, not this widget's focus handling
+    // by itself.
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyN): _newTaskShortcut,
+        const SingleActivator(LogicalKeyboardKey.slash): _searchShortcut,
+      },
+      child: Scaffold(
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -370,12 +379,7 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
                         showInviteAndSettings: !isViewer,
                         onSelected: (value) {
                           if (value == 'invite') {
-                            showModalBottomSheet(
-                              context: context,
-                              isScrollControlled: true,
-                              backgroundColor: Colors.transparent,
-                              builder: (_) => InviteSheet(board: board),
-                            );
+                            _showSheet((_) => InviteSheet(board: board));
                           } else if (value == 'activity') {
                             Navigator.of(context).push(
                               MaterialPageRoute(builder: (_) => ActivityScreen(board: board)),
@@ -474,6 +478,7 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
               ),
           ],
         ),
+      ),
       ),
     );
   }

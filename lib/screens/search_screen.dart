@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../data/saved_filters.dart';
 import '../models/board.dart';
 import '../models/board_column.dart';
 import '../models/member.dart';
@@ -32,11 +33,75 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   final Set<String> _fAssigneeIds = {};
   bool _fOverdue = false;
   bool _fDueSoon = false;
+  List<SavedFilter> _savedFilters = [];
+
+  @override
+  void initState() {
+    super.initState();
+    loadSavedFilters(widget.board.id).then((f) {
+      if (mounted) setState(() => _savedFilters = f);
+    });
+  }
 
   @override
   void dispose() {
     _queryController.dispose();
     super.dispose();
+  }
+
+  void _applySavedFilter(SavedFilter f) {
+    setState(() {
+      _fPriority
+        ..clear()
+        ..addAll(f.priorities);
+      _fAssigneeIds
+        ..clear()
+        ..addAll(f.assigneeIds);
+      _fOverdue = f.overdue;
+      _fDueSoon = f.dueSoon;
+    });
+  }
+
+  Future<void> _saveCurrentFilter() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Save this filter'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'e.g. My overdue, high priority'),
+          onSubmitted: (v) => Navigator.of(context).pop(v.trim()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty || !mounted) return;
+    final next = [
+      ..._savedFilters.where((f) => f.name != name),
+      SavedFilter(
+        name: name,
+        priorities: Set.of(_fPriority),
+        assigneeIds: Set.of(_fAssigneeIds),
+        overdue: _fOverdue,
+        dueSoon: _fDueSoon,
+      ),
+    ];
+    await saveSavedFilters(widget.board.id, next);
+    if (mounted) setState(() => _savedFilters = next);
+  }
+
+  Future<void> _deleteSavedFilter(SavedFilter f) async {
+    final next = _savedFilters.where((s) => s.name != f.name).toList();
+    await saveSavedFilters(widget.board.id, next);
+    if (mounted) setState(() => _savedFilters = next);
   }
 
   int get _filterCount =>
@@ -165,6 +230,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 ],
               ),
             ),
+            if (_savedFilters.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 10, 18, 0),
+                child: SizedBox(
+                  height: 30,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _savedFilters.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 8),
+                    itemBuilder: (context, i) => _SavedFilterChip(
+                      filter: _savedFilters[i],
+                      onTap: () => _applySavedFilter(_savedFilters[i]),
+                      onDelete: () => _deleteSavedFilter(_savedFilters[i]),
+                    ),
+                  ),
+                ),
+              ),
             if (_filterOpen)
               Padding(
                 padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
@@ -185,6 +267,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     _fDueSoon = false;
                   }),
                   onApply: () => setState(() => _filterOpen = false),
+                  onSave: _filterCount > 0 ? _saveCurrentFilter : null,
                 ),
               ),
             const SizedBox(height: 6),
@@ -215,6 +298,41 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 }
 
+class _SavedFilterChip extends StatelessWidget {
+  final SavedFilter filter;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+  const _SavedFilterChip({required this.filter, required this.onTap, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      onLongPress: onDelete,
+      borderRadius: BorderRadius.circular(999),
+      child: Tooltip(
+        message: 'Apply "${filter.name}" (long-press to delete)',
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: AppColors.primaryTint,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.bookmark, size: 12, color: AppColors.primary),
+              const SizedBox(width: 5),
+              Text(filter.name, style: AppTextStyles.bodySmall(color: AppColors.primary).copyWith(fontWeight: FontWeight.w700)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _FilterPanel extends StatelessWidget {
   final Board board;
   final Set<Priority> selectedPriorities;
@@ -227,6 +345,7 @@ class _FilterPanel extends StatelessWidget {
   final VoidCallback onToggleDueSoon;
   final VoidCallback onClear;
   final VoidCallback onApply;
+  final VoidCallback? onSave;
 
   const _FilterPanel({
     required this.board,
@@ -240,6 +359,7 @@ class _FilterPanel extends StatelessWidget {
     required this.onToggleDueSoon,
     required this.onClear,
     required this.onApply,
+    this.onSave,
   });
 
   @override
@@ -287,6 +407,21 @@ class _FilterPanel extends StatelessWidget {
               ],
             ],
           ),
+          if (onSave != null) ...[
+            const SizedBox(height: 14),
+            InkWell(
+              onTap: onSave,
+              borderRadius: BorderRadius.circular(10),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.bookmark_add_outlined, size: 15, color: AppColors.primary),
+                  const SizedBox(width: 6),
+                  Text('Save this filter', style: AppTextStyles.bodySmall(color: AppColors.primary).copyWith(fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           Row(
             children: [
@@ -401,7 +536,10 @@ class _DueFilterChip extends StatelessWidget {
         ),
         child: Text(
           label,
-          style: AppTextStyles.bodySmall(color: selected ? Colors.white : theme.colorScheme.onSurface.withValues(alpha: 0.6)).copyWith(fontWeight: FontWeight.w700),
+          // White text on AppColors.priorityHigh measures ~3.4:1 — under
+          // WCAG's 4.5:1 for this small bold text. Same fix as the
+          // priority pills elsewhere in this file.
+          style: AppTextStyles.bodySmall(color: selected ? AppColors.textPrimaryLight : theme.colorScheme.onSurface.withValues(alpha: 0.6)).copyWith(fontWeight: FontWeight.w700),
         ),
       ),
     );

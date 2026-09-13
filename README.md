@@ -13,12 +13,19 @@ concurrent writes; a teammate's presence pill appears from a live heartbeat.
 - **Boards & tasks** — create/rename/recolor/archive boards, drag-and-drop
   cards across To Do / In Progress / Done with fractional-index ordering,
   task labels, due dates with overdue/due-soon indicators, subtasks,
-  comments with `@mention` notifications, small image attachments, and a
-  per-board activity log with a 7-day velocity chart
+  comments with `@mention` notifications and lightweight markdown
+  (`**bold**`, `*italic*`, `` `code` ``, `[links](url)`), small image
+  attachments, and a per-board activity log with a 7-day velocity chart
+- **Board templates** — start from a Sprint board, Content calendar, Bug
+  tracker, or blank
+- **My Tasks** — everything assigned to you across every board you're in,
+  grouped by overdue/due-soon/upcoming, in one place
 - **Bulk actions** — multi-select mode to move or delete several tasks at
   once
 - **CSV export & import** — download any board's tasks as a spreadsheet, or
   bulk-create tasks from one
+- **Saved filters** — name and re-apply a filter combination per board
+  instead of re-selecting it every time
 - **Keyboard shortcuts** — `n` for a new task, `/` for search, `Esc` to
   close a sheet
 - **Real-time collaboration** — live presence, and conflict detection that

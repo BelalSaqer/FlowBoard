@@ -126,7 +126,16 @@ class _NewTaskSheetState extends ConsumerState<NewTaskSheet> {
                         ),
                       ),
                       const SizedBox(height: 18),
-                      _SectionLabel('DESCRIPTION'),
+                      Row(
+                        children: [
+                          _SectionLabel('DESCRIPTION'),
+                          const Spacer(),
+                          Text(
+                            '**bold**  *italic*  `code`  [link](url)',
+                            style: AppTextStyles.metaTiny(color: theme.colorScheme.onSurface.withValues(alpha: 0.35)),
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 6),
                       _InputBox(
                         theme: theme,
