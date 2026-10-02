@@ -1,5 +1,7 @@
 import 'dart:async';
-import 'dart:html' as html;
+import 'dart:js_interop';
+
+import 'package:web/web.dart' as web;
 
 /// Opens the browser's native file picker restricted to [accept] (e.g.
 /// `.csv`) and resolves to the chosen file's text content, or null if the
@@ -10,25 +12,40 @@ import 'dart:html' as html;
 /// as a genuine user gesture and it silently won't open.
 Future<String?> pickTextFile({required String accept}) {
   final completer = Completer<String?>();
-  final input = html.FileUploadInputElement()..accept = accept;
+  final input = web.HTMLInputElement()
+    ..type = 'file'
+    ..accept = accept;
   input.click();
 
   void resolveNull() {
     if (!completer.isCompleted) completer.complete(null);
   }
 
-  input.onChange.listen((_) {
+  bool hasNoFile() {
     final files = input.files;
-    if (files == null || files.isEmpty) {
+    return files == null || files.length == 0;
+  }
+
+  web.EventStreamProviders.changeEvent.forTarget(input).listen((_) {
+    final file = input.files?.item(0);
+    if (file == null) {
       resolveNull();
       return;
     }
-    final reader = html.FileReader();
-    reader.onLoadEnd.listen((_) {
-      if (!completer.isCompleted) completer.complete(reader.result as String?);
+    final reader = web.FileReader();
+    web.EventStreamProviders.loadEndEvent.forTarget(reader).listen((_) {
+      if (completer.isCompleted) return;
+      final result = reader.result;
+      completer.complete(
+        result != null && result.isA<JSString>()
+            ? (result as JSString).toDart
+            : null,
+      );
     });
-    reader.onError.listen((_) => resolveNull());
-    reader.readAsText(files.first);
+    web.EventStreamProviders.errorEvent
+        .forTarget(reader)
+        .listen((_) => resolveNull());
+    reader.readAsText(file);
   });
 
   // Neither 'change' nor a dedicated cancel event is guaranteed to fire
@@ -41,14 +58,15 @@ Future<String?> pickTextFile({required String accept}) {
   // grace period after that — long enough for a real 'change' event to
   // land first if a file actually was chosen — treats a still-empty file
   // list as a cancel too.
-  input.on['cancel'].listen((_) => resolveNull());
-  late final StreamSubscription<html.Event> focusSub;
-  focusSub = html.window.onFocus.listen((_) {
+  const web.EventStreamProvider<web.Event>('cancel')
+      .forTarget(input)
+      .listen((_) => resolveNull());
+  late final StreamSubscription<web.Event> focusSub;
+  focusSub =
+      web.EventStreamProviders.focusEvent.forTarget(web.window).listen((_) {
     focusSub.cancel();
     Future.delayed(const Duration(milliseconds: 300), () {
-      if (!completer.isCompleted && (input.files == null || input.files!.isEmpty)) {
-        resolveNull();
-      }
+      if (!completer.isCompleted && hasNoFile()) resolveNull();
     });
   });
 
